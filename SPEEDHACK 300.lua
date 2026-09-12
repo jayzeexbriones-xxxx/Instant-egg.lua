@@ -1,6 +1,8 @@
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
 local LocalPlayer = Players.LocalPlayer
 
 -- UI setup
@@ -30,18 +32,18 @@ SpeedToggleButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
 SpeedToggleButton.TextColor3 = Color3.new(1, 1, 1)
 SpeedToggleButton.Parent = MainFrame
 
-local InstantHitToggleButton = Instance.new("TextButton")
-InstantHitToggleButton.Size = UDim2.new(0.5, -15, 0, 40)
-InstantHitToggleButton.Position = UDim2.new(0.5, 5, 0, 50)
-InstantHitToggleButton.Text = "Instant Hit OFF"
-InstantHitToggleButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-InstantHitToggleButton.TextColor3 = Color3.new(1, 1, 1)
-InstantHitToggleButton.Parent = MainFrame
+local InstantGrabToggleButton = Instance.new("TextButton")
+InstantGrabToggleButton.Size = UDim2.new(0.5, -15, 0, 40)
+InstantGrabToggleButton.Position = UDim2.new(0.5, 5, 0, 50)
+InstantGrabToggleButton.Text = "Instant Grab OFF"
+InstantGrabToggleButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+InstantGrabToggleButton.TextColor3 = Color3.new(1, 1, 1)
+InstantGrabToggleButton.Parent = MainFrame
 
 -- Variables
 local menuEnabled = true
 local speedActive = false
-local hitActive = false
+local instantGrabActive = false
 local defaultWalkSpeed = 16
 local speedValue = 300
 
@@ -74,13 +76,13 @@ SpeedToggleButton.MouseButton1Click:Connect(function()
     end
 end)
 
--- Instant Hit toggle
-InstantHitToggleButton.MouseButton1Click:Connect(function()
-    hitActive = not hitActive
-    if hitActive then
-        InstantHitToggleButton.Text = "Instant Hit ON"
+-- Instant Grab toggle
+InstantGrabToggleButton.MouseButton1Click:Connect(function()
+    instantGrabActive = not instantGrabActive
+    if instantGrabActive then
+        InstantGrabToggleButton.Text = "Instant Grab ON"
     else
-        InstantHitToggleButton.Text = "Instant Hit OFF"
+        InstantGrabToggleButton.Text = "Instant Grab OFF"
     end
 end)
 
@@ -109,9 +111,9 @@ RunService.Stepped:Connect(function()
     end
 end)
 
--- Instant Hit functionality
+-- Instant Grab functionality
 game:GetService("RunService").Heartbeat:Connect(function()
-    if hitActive then
+    if instantGrabActive then
         local character = LocalPlayer.Character
         if not character then return end
         local rootPart = character:FindFirstChild("HumanoidRootPart")
@@ -134,29 +136,27 @@ end)
 local dragging = false
 local dragStart, startPos
 
-MainFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = MainFrame.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
-    end
-end)
+local function makeDraggable(frame, dragHandle)
+    dragHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+        end
+    end)
+    dragHandle.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
 
-MainFrame.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then
-        dragInput = input
-    end
-end)
+makeDraggable(MainFrame, MainFrame) -- Draggable ang mismong main frame
 
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
-        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
-                                        startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
+print("🍭 Speed Hack at ON/OFF, Instant Grab at ON/OFF, draggable UI")
