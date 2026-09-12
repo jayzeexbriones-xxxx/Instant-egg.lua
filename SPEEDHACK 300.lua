@@ -1,118 +1,140 @@
-local ScreenGui = Instance.new("ScreenGui")
-local MainFrame = Instance.new("Frame")
-local SpeedButton = Instance.new("TextButton")
-local GoToEggButton = Instance.new("TextButton")
-local AutoTeleportToggle = Instance.new("TextButton")
-local AutoGrabToggle = Instance.new("TextButton")
+local UserInputService = game:GetService("UserInputService")
+local dragging = false
+local dragInput, dragStart, startPos
 
 -- UI setup
+local ScreenGui = Instance.new("ScreenGui")
+local MainFrame = Instance.new("Frame")
+local ToggleButton = Instance.new("TextButton")
+local SpeedButton = Instance.new("TextButton")
+local InstantHitButton = Instance.new("TextButton")
+
 ScreenGui.Parent = game.CoreGui
 
-MainFrame.Size = UDim2.new(0, 300, 0, 200)
-MainFrame.Position = UDim2.new(0.5, -150, 0.5, -100)
-MainFrame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+MainFrame.Size = UDim2.new(0, 300, 0, 130)
+MainFrame.Position = UDim2.new(0.5, -150, 0.5, -65)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 MainFrame.Active = true
-MainFrame.Draggable = true
+MainFrame.Draggable = false -- Hindi pa draggable, manual control
 MainFrame.Parent = ScreenGui
 
--- Speed Button (nasa unahan)
-SpeedButton.Size = UDim2.new(1, 0, 0, 50)
-SpeedButton.Position = UDim2.new(0, 0, 0, 0)
+-- ON/OFF Toggle Button
+ToggleButton.Size = UDim2.new(1, -20, 0, 30)
+ToggleButton.Position = UDim2.new(0, 10, 0, 10)
+ToggleButton.Text = "MENU ON"
+ToggleButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+ToggleButton.TextColor3 = Color3.new(1, 1, 1)
+ToggleButton.Parent = MainFrame
+
+-- Speed Button
+SpeedButton.Size = UDim2.new(0.5, -15, 1, -40)
+SpeedButton.Position = UDim2.new(0, 10, 0, 40)
 SpeedButton.Text = "Speed 300"
-SpeedButton.BackgroundColor3 = Color3.new(0.2, 0.6, 0.2)
+SpeedButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+SpeedButton.TextColor3 = Color3.new(1, 1, 1)
 SpeedButton.Parent = MainFrame
 
--- GO TO BEST EGG Button
-GoToEggButton.Size = UDim2.new(1, 0, 0, 50)
-GoToEggButton.Position = UDim2.new(0, 0, 0.5, 0)
-GoToEggButton.Text = "GO TO BEST EGG"
-GoToEggButton.BackgroundColor3 = Color3.new(0.2, 0.2, 0.8)
-GoToEggButton.Parent = MainFrame
+-- Instant Hit Button
+InstantHitButton.Size = UDim2.new(0.5, -15, 1, -40)
+InstantHitButton.Position = UDim2.new(0.5, 5, 0, 40)
+InstantHitButton.Text = "Instant Hit"
+InstantHitButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+InstantHitButton.TextColor3 = Color3.new(1, 1, 1)
+InstantHitButton.Parent = MainFrame
 
--- AUTO TELEPORT Toggle
-AutoTeleportToggle.Size = UDim2.new(1, 0, 0, 50)
-AutoTeleportToggle.Position = UDim2.new(0, 0, 1, 0)
-AutoTeleportToggle.Text = "AUTO TELEPORT: OFF"
-AutoTeleportToggle.BackgroundColor3 = Color3.new(0.8, 0.8, 0.2)
-AutoTeleportToggle.Parent = MainFrame
-
--- AUTO GRAB Toggle
-AutoGrabToggle.Size = UDim2.new(1, 0, 0, 50)
-AutoGrabToggle.Position = UDim2.new(0, 0, 1.5, 0)
-AutoGrabToggle.Text = "AUTO GRAB: OFF"
-AutoGrabToggle.BackgroundColor3 = Color3.new(0.8, 0.2, 0.2)
-AutoGrabToggle.Parent = MainFrame
+-- Variables
+local menuEnabled = true
+local autoSpeed = false
+local autoHit = false
+local defaultSpeed = 16
 
 -- Functions
-local player = game.Players.LocalPlayer
-
 local function getHumanoid()
-    if player.Character then
-        return player.Character:FindFirstChildOfClass("Humanoid")
+    if game.Players.LocalPlayer.Character then
+        return game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     end
     return nil
 end
 
--- Speed button action
+-- Toggle menu ON/OFF
+ToggleButton.MouseButton1Click:Connect(function()
+    menuEnabled = not menuEnabled
+    MainFrame.Visible = menuEnabled
+    if menuEnabled then
+        ToggleButton.Text = "MENU ON"
+    else
+        ToggleButton.Text = "MENU OFF"
+    end
+end)
+
+-- Speed Button action
 SpeedButton.MouseButton1Click:Connect(function()
     local humanoid = getHumanoid()
     if humanoid then
-        humanoid.WalkSpeed = 300
+        humanoid.WalkSpeed = 400
+        autoSpeed = true
     end
 end)
 
--- GO TO BEST EGG button action
-GoToEggButton.MouseButton1Click:Connect(function()
-    -- Implement your teleport logic here
-    print("Teleporting to best egg...")
-    -- Example:
-    -- player.Character:MoveTo(Vector3.new(x, y, z))
-end)
-
--- AUTO TELEPORT toggle
-local autoTeleportOn = false
-AutoTeleportToggle.MouseButton1Click:Connect(function()
-    autoTeleportOn = not autoTeleportOn
-    if autoTeleportOn then
-        AutoTeleportToggle.Text = "AUTO TELEPORT: ON"
-    else
-        AutoTeleportToggle.Text = "AUTO TELEPORT: OFF"
+-- Instant Hit Button action
+InstantHitButton.MouseButton1Click:Connect(function()
+    local character = game.Players.LocalPlayer.Character
+    if character and character:FindFirstChild("Head") then
+        for _, target in pairs(workspace:GetChildren()) do
+            if target:FindFirstChildOfClass("Humanoid") and target:FindFirstChild("Head") then
+                local distance = (target.Head.Position - character.Head.Position).magnitude
+                if distance < 50 then
+                    target.Humanoid:TakeDamage(99999)
+                end
+            end
+        end
+        autoHit = true
     end
 end)
 
--- AUTO GRAB toggle
-local autoGrabOn = false
-AutoGrabToggle.MouseButton1Click:Connect(function()
-    autoGrabOn = not autoGrabOn
-    if autoGrabOn then
-        AutoGrabToggle.Text = "AUTO GRAB: ON"
-    else
-        AutoGrabToggle.Text = "AUTO GRAB: OFF"
-    end
-end)
-
--- Optional: Automate teleportation or grabbing based on toggles
-game:GetService("RunService").Stepped:Connect(function()
-    if autoTeleportOn then
-        -- Auto teleport logic
-        -- Example: move to target
-    end
-    if autoGrabOn then
-        -- Auto grab logic
-    end
-end)
-
--- Reset speed when character respawns
-player.CharacterAdded:Connect(function()
+-- Reset speed on respawn
+game.Players.LocalPlayer.CharacterAdded:Connect(function()
     wait(1)
     local humanoid = getHumanoid()
     if humanoid then
-        humanoid.WalkSpeed = 16
+        humanoid.WalkSpeed = defaultSpeed
+        autoSpeed = false
     end
 end)
 
--- Initialize speed
-local humanoid = getHumanoid()
-if humanoid then
-    humanoid.WalkSpeed = 16
-end
+-- Automate speed
+game:GetService("RunService").Stepped:Connect(function()
+    if autoSpeed then
+        local humanoid = getHumanoid()
+        if humanoid then
+            humanoid.WalkSpeed = 400
+        end
+    end
+end)
+
+-- Draggable UI logic
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
