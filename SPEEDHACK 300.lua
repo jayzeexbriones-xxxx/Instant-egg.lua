@@ -1,8 +1,9 @@
 local ScreenGui = Instance.new("ScreenGui")
 local MainFrame = Instance.new("Frame")
-local SpeedToggle = Instance.new("TextButton") -- Gagamitin bilang toggle
+local SpeedButton = Instance.new("TextButton")
+local HitButton = Instance.new("TextButton")
 
--- UI Setup
+-- UI setup
 ScreenGui.Parent = game.CoreGui
 
 MainFrame.Size = UDim2.new(0, 200, 0, 100)
@@ -12,57 +13,56 @@ MainFrame.Active = true
 MainFrame.Draggable = true
 MainFrame.Parent = ScreenGui
 
-SpeedToggle.Size = UDim2.new(1, 0, 1, 0)
-SpeedToggle.Position = UDim2.new(0, 0, 0, 0)
-SpeedToggle.Text = "Speed OFF"
-SpeedToggle.Parent = MainFrame
+SpeedButton.Size = UDim2.new(1, 0, 0.5, 0)
+SpeedButton.Position = UDim2.new(0, 0, 0, 0)
+SpeedButton.Text = "Speed Hack 300"
+SpeedButton.Parent = MainFrame
 
-local speedOn = false
-local defaultSpeed = 16 -- Default speed
-local hackSpeed = 300 -- Naka-set nang speed na naka-on
+HitButton.Size = UDim2.new(1, 0, 0.5, 0)
+HitButton.Position = UDim2.new(0, 0, 0.5, 0)
+HitButton.Text = "Instant Hit"
+HitButton.Parent = MainFrame
 
-local playerHumanoid = nil
-
+local player = game.Players.LocalPlayer
 local function getHumanoid()
-    if game.Players.LocalPlayer and game.Players.LocalPlayer.Character then
-        return game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if player.Character then
+        return player.Character:FindFirstChildOfClass("Humanoid")
     end
     return nil
 end
 
-local function updateSpeed()
+-- Speed Hack Button
+SpeedButton.MouseButton1Click:Connect(function()
     local humanoid = getHumanoid()
     if humanoid then
-        if speedOn then
-            humanoid.WalkSpeed = hackSpeed
-        else
-            humanoid.WalkSpeed = defaultSpeed
-        end
-    end
-end
-
-SpeedToggle.MouseButton1Click:Connect(function()
-    speedOn = not speedOn
-    if speedOn then
-        SpeedToggle.Text = "Speed ON"
-    else
-        SpeedToggle.Text = "Speed OFF"
-    end
-    updateSpeed()
-end)
-
--- Siguraduhing mag-update ang speed kapag nag-respawn ang character
-game.Players.LocalPlayer.CharacterAdded:Connect(function()
-    wait(1) -- maliit na delay para sa respawn
-    if not speedOn then
-        local humanoid = getHumanoid()
-        if humanoid then
-            humanoid.WalkSpeed = defaultSpeed
-        end
+        humanoid.WalkSpeed = 300
     end
 end)
 
--- I-initialize ang speed kapag nagsimula ang game
+-- Instant Hit Button
+HitButton.MouseButton1Click:Connect(function()
+    -- Example: Instant damage logic
+    -- I-implement mo dito kung paano gawin ang instant hit depende sa game mechanics
+    print("Instant Hit Activated")
+    -- Halimbawa, kung merong damage system:
+    -- local target = -- find target
+    -- if target then
+    --     target:TakeDamage(9999)
+    -- end
+end)
+
+-- Siguraduhing mag-reset ang speed kapag nag-respawn ang player
+player.CharacterAdded:Connect(function()
+    wait(1)
+    local humanoid = getHumanoid()
+    if humanoid then
+        humanoid.WalkSpeed = 16 -- default speed
+    end
+end)
+
+-- Initialize
 wait(1)
-updateSpeed()
-    
+local humanoid = getHumanoid()
+if humanoid then
+    humanoid.WalkSpeed = 16
+end
