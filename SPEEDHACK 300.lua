@@ -138,9 +138,9 @@ InstantPickupToggle.MouseButton1Click:Connect(function()
     end
 end)
 
--- Make the UI draggable
+-- Make the UI draggable (updated logic)
 local dragging = false
-local dragInput, dragStart, startPos
+local dragStart, startPos
 
 DragArea.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -156,8 +156,9 @@ DragArea.InputBegan:Connect(function(input)
 end)
 
 DragArea.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then
-        dragInput = input
+    if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
+        local delta = input.Position - dragStart
+        DragUI.Position = startPos + UDim2.new(0, delta.X, 0, delta.Y)
     end
 end)
 
@@ -172,8 +173,6 @@ end)
 game:GetService("RunService").RenderStepped:Connect(function()
     if instantPickupEnabled then
         -- Trigger the instant pickup for "CarryAreaEgg"
-        -- You can add your specific logic here if needed
-        -- Example: simulate the prompt being pressed
         for _, prompt in pairs(utility.ProximityPromptService:GetPromptInstances()) do
             if tostring(prompt) == "CarryAreaEgg" then
                 prompt.HoldDuration = 0
