@@ -68,15 +68,15 @@ UICorner.CornerRadius = UDim.new(0, 8)
 UICorner.Parent = DragUI
 DragUI.Parent = ScreenGui
 
--- Palitan ang "Drag me" ng "HIDE MENU" button
-local hideMenuButton = Instance.new("TextButton")
-hideMenuButton.Size = UDim2.new(1, 0, 0, 30)
-hideMenuButton.Position = UDim2.new(0, 0, 0, 0)
-hideMenuButton.Text = "HIDE MENU"
-hideMenuButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-hideMenuButton.Font = Enum.Font.GothamSemibold
-hideMenuButton.TextSize = 14
-hideMenuButton.Parent = DragUI
+-- Replace ang "Drag me" label with "HIDE MENU" button
+local hideButton = Instance.new("TextButton")
+hideButton.Size = UDim2.new(1, 0, 0, 30)
+hideButton.Position = UDim2.new(0, 0, 0, 0)
+hideButton.Text = "HIDE MENU"
+hideButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+hideButton.Font = Enum.Font.GothamSemibold
+hideButton.TextSize = 14
+hideButton.Parent = DragUI
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Size = UDim2.new(1, 0, 1, -30)
@@ -141,20 +141,18 @@ InstantPickupToggle.MouseButton1Click:Connect(function()
     end
 end)
 
--- Make the UI draggable
-local dragging = false
-local dragInput, dragStart, startPos
-
--- Hindi na kailangan ang DragArea, pero kung gusto mong itago ang "Drag me" label at gawing button lang:
--- Gamitin natin ang hideMenuButton para magtoggle ng UI visibility
+-- Gamitin ang toggle para i-hide o show ang UI
 local uiVisible = true
 
-hideMenuButton.MouseButton1Click:Connect(function()
+hideButton.MouseButton1Click:Connect(function()
     uiVisible = not uiVisible
     DragUI.Visible = uiVisible
 end)
 
--- Optional: Pwede mo rin gawing draggable ang UI kung gusto mo
+-- Optional: pwede mo pa rin gawing draggable ang UI
+local dragging = false
+local dragStart, startPos
+
 DragUI.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         dragging = true
