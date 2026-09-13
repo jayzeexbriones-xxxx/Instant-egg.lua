@@ -17,7 +17,7 @@ local PlayerGui = player:WaitForChild("PlayerGui")
 -- CONFIG
 --==================================================
 
-local PANEL_URL = "https://pastebin.com/raw/PrGsxZ9L"
+local PANEL_URL = "https://pastebin.com/raw/PrGsxZ"
 
 local HUB_NAME = "JAYZ HUB"
 
@@ -45,6 +45,7 @@ function utility:bind(event, callback)
     end
 
     warn("Failed to bind connection: " .. tostring(conn))
+
     return nil
 end
 
@@ -84,6 +85,7 @@ function utility:init()
             and tostring(ProximityPrompt) == "CarryAreaEgg" then
 
                 ProximityPrompt.HoldDuration = 0
+
             end
 
         end
@@ -135,6 +137,7 @@ local function round(object, radius)
     local c = Instance.new("UICorner")
 
     c.CornerRadius = UDim.new(0, radius)
+
     c.Parent = object
 
 end
@@ -167,7 +170,9 @@ local function makeDraggable(handle, target)
             input.Changed:Connect(function()
 
                 if input.UserInputState == Enum.UserInputState.End then
+
                     dragging = false
+
                 end
 
             end)
@@ -196,11 +201,13 @@ local function makeDraggable(handle, target)
             local delta = input.Position - dragStart
 
             target.Position = UDim2.new(
+
                 startPos.X.Scale,
                 startPos.X.Offset + delta.X,
 
                 startPos.Y.Scale,
                 startPos.Y.Offset + delta.Y
+
             )
 
         end
@@ -218,14 +225,15 @@ local LoginFrame = Instance.new("Frame")
 
 LoginFrame.Name = "Login"
 
-LoginFrame.Size = UDim2.new(0, 330, 0, 235)
+LoginFrame.Size = UDim2.new(0, 330, 0, 250)
 
 LoginFrame.Position = UDim2.new(
     0.5, -165,
-    0.5, -118
+    0.5, -125
 )
 
-LoginFrame.BackgroundColor3 = Color3.fromRGB(23, 23, 23)
+LoginFrame.BackgroundColor3 =
+    Color3.fromRGB(23, 23, 23)
 
 LoginFrame.BorderSizePixel = 0
 
@@ -240,21 +248,26 @@ round(LoginFrame, 16)
 
 local LoginHeader = Instance.new("TextButton")
 
-LoginHeader.Size = UDim2.new(1, 0, 0, 55)
+LoginHeader.Size =
+    UDim2.new(1, 0, 0, 55)
 
-LoginHeader.Position = UDim2.new(0, 0, 0, 0)
+LoginHeader.Position =
+    UDim2.new(0, 0, 0, 0)
 
-LoginHeader.BackgroundColor3 = Color3.fromRGB(43, 43, 43)
+LoginHeader.BackgroundColor3 =
+    Color3.fromRGB(43, 43, 43)
 
 LoginHeader.BorderSizePixel = 0
 
 LoginHeader.Text = "🔐  VIP ACCESS"
 
-LoginHeader.TextColor3 = Color3.fromRGB(255, 255, 255)
+LoginHeader.TextColor3 =
+    Color3.fromRGB(255, 255, 255)
 
 LoginHeader.TextSize = 18
 
-LoginHeader.Font = Enum.Font.GothamBold
+LoginHeader.Font =
+    Enum.Font.GothamBold
 
 LoginHeader.AutoButtonColor = false
 
@@ -269,19 +282,23 @@ round(LoginHeader, 16)
 
 local Title = Instance.new("TextLabel")
 
-Title.Size = UDim2.new(1, -30, 0, 30)
+Title.Size =
+    UDim2.new(1, -30, 0, 30)
 
-Title.Position = UDim2.new(0, 15, 0, 68)
+Title.Position =
+    UDim2.new(0, 15, 0, 68)
 
 Title.BackgroundTransparency = 1
 
 Title.Text = HUB_NAME
 
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextColor3 =
+    Color3.fromRGB(255, 255, 255)
 
 Title.TextSize = 19
 
-Title.Font = Enum.Font.GothamBold
+Title.Font =
+    Enum.Font.GothamBold
 
 Title.Parent = LoginFrame
 
@@ -292,19 +309,24 @@ Title.Parent = LoginFrame
 
 local SubTitle = Instance.new("TextLabel")
 
-SubTitle.Size = UDim2.new(1, -30, 0, 22)
+SubTitle.Size =
+    UDim2.new(1, -30, 0, 22)
 
-SubTitle.Position = UDim2.new(0, 15, 0, 96)
+SubTitle.Position =
+    UDim2.new(0, 15, 0, 96)
 
 SubTitle.BackgroundTransparency = 1
 
-SubTitle.Text = "Enter your VIP key to continue"
+SubTitle.Text =
+    "Enter your VIP key to continue"
 
-SubTitle.TextColor3 = Color3.fromRGB(155, 155, 155)
+SubTitle.TextColor3 =
+    Color3.fromRGB(155, 155, 155)
 
 SubTitle.TextSize = 12
 
-SubTitle.Font = Enum.Font.Gotham
+SubTitle.Font =
+    Enum.Font.Gotham
 
 SubTitle.Parent = LoginFrame
 
@@ -315,25 +337,32 @@ SubTitle.Parent = LoginFrame
 
 local KeyBox = Instance.new("TextBox")
 
-KeyBox.Size = UDim2.new(1, -40, 0, 42)
+KeyBox.Size =
+    UDim2.new(1, -40, 0, 42)
 
-KeyBox.Position = UDim2.new(0, 20, 0, 125)
+KeyBox.Position =
+    UDim2.new(0, 20, 0, 125)
 
-KeyBox.BackgroundColor3 = Color3.fromRGB(38, 38, 38)
+KeyBox.BackgroundColor3 =
+    Color3.fromRGB(38, 38, 38)
 
 KeyBox.BorderSizePixel = 0
 
-KeyBox.PlaceholderText = "🔑  Enter VIP Key..."
+KeyBox.PlaceholderText =
+    "🔑  Enter VIP Key..."
 
-KeyBox.PlaceholderColor3 = Color3.fromRGB(125, 125, 125)
+KeyBox.PlaceholderColor3 =
+    Color3.fromRGB(125, 125, 125)
 
 KeyBox.Text = ""
 
-KeyBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+KeyBox.TextColor3 =
+    Color3.fromRGB(255, 255, 255)
 
 KeyBox.TextSize = 14
 
-KeyBox.Font = Enum.Font.GothamMedium
+KeyBox.Font =
+    Enum.Font.GothamMedium
 
 KeyBox.ClearTextOnFocus = false
 
@@ -348,21 +377,26 @@ round(KeyBox, 9)
 
 local LoginButton = Instance.new("TextButton")
 
-LoginButton.Size = UDim2.new(1, -40, 0, 40)
+LoginButton.Size =
+    UDim2.new(1, -40, 0, 40)
 
-LoginButton.Position = UDim2.new(0, 20, 0, 175)
+LoginButton.Position =
+    UDim2.new(0, 20, 0, 175)
 
-LoginButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+LoginButton.BackgroundColor3 =
+    Color3.fromRGB(70, 70, 70)
 
 LoginButton.BorderSizePixel = 0
 
 LoginButton.Text = "LOGIN"
 
-LoginButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+LoginButton.TextColor3 =
+    Color3.fromRGB(255, 255, 255)
 
 LoginButton.TextSize = 14
 
-LoginButton.Font = Enum.Font.GothamBold
+LoginButton.Font =
+    Enum.Font.GothamBold
 
 LoginButton.Parent = LoginFrame
 
@@ -375,24 +409,31 @@ round(LoginButton, 9)
 
 local LoginStatus = Instance.new("TextLabel")
 
-LoginStatus.Size = UDim2.new(1, -40, 0, 20)
+LoginStatus.Size =
+    UDim2.new(1, -40, 0, 20)
 
-LoginStatus.Position = UDim2.new(0, 20, 0, 218)
+LoginStatus.Position =
+    UDim2.new(0, 20, 0, 218)
 
 LoginStatus.BackgroundTransparency = 1
 
 LoginStatus.Text = ""
 
-LoginStatus.TextColor3 = Color3.fromRGB(180, 180, 180)
+LoginStatus.TextColor3 =
+    Color3.fromRGB(180, 180, 180)
 
 LoginStatus.TextSize = 11
 
-LoginStatus.Font = Enum.Font.Gotham
+LoginStatus.Font =
+    Enum.Font.Gotham
 
 LoginStatus.Parent = LoginFrame
 
 
--- Make login draggable
+--==================================================
+-- LOGIN DRAG
+--==================================================
+
 makeDraggable(LoginHeader, LoginFrame)
 
 
@@ -416,12 +457,14 @@ local function parseDate(dateString)
     end
 
     return os.time({
+
         year = tonumber(y),
         month = tonumber(m),
         day = tonumber(d),
         hour = tonumber(h),
         min = tonumber(mi),
         sec = tonumber(s)
+
     })
 
 end
@@ -433,10 +476,10 @@ end
 
 local function checkVIPKey(inputKey)
 
-    if PANEL_URL == "YOUR_RAW_PANEL_URL_HERE" then
+    if PANEL_URL == "" then
 
         return false,
-            "Set your PANEL_URL first"
+            "Panel URL is empty"
 
     end
 
@@ -465,7 +508,8 @@ local function checkVIPKey(inputKey)
     end)
 
 
-    if not decodeOK or type(data) ~= "table" then
+    if not decodeOK
+    or type(data) ~= "table" then
 
         return false,
             "Invalid panel data"
@@ -491,6 +535,7 @@ local function checkVIPKey(inputKey)
     end
 
 
+    -- Find key
     local keyData = data.keys[inputKey]
 
 
@@ -511,7 +556,8 @@ local function checkVIPKey(inputKey)
     end
 
 
-    local expiryTime = parseDate(keyData.expiry)
+    local expiryTime =
+        parseDate(keyData.expiry)
 
 
     if not expiryTime then
@@ -522,6 +568,7 @@ local function checkVIPKey(inputKey)
     end
 
 
+    -- Check expiry
     if os.time() >= expiryTime then
 
         return false,
@@ -537,25 +584,27 @@ end
 
 
 --==================================================
--- MAIN UI FUNCTION
+-- MAIN UI
 --==================================================
 
 local function createMainUI()
 
     --==================================================
-    -- MAIN
+    -- MAIN FRAME
     --==================================================
 
     local Main = Instance.new("Frame")
 
     Main.Name = "Main"
 
-    Main.Size = UDim2.new(0, 230, 0, 120)
+    Main.Size =
+        UDim2.new(0, 230, 0, 120)
 
-    Main.Position = UDim2.new(
-        0.5, -115,
-        0.15, 0
-    )
+    Main.Position =
+        UDim2.new(
+            0.5, -115,
+            0.15, 0
+        )
 
     Main.BackgroundColor3 =
         Color3.fromRGB(25, 25, 25)
@@ -575,9 +624,11 @@ local function createMainUI()
 
     Header.Name = "DragHeader"
 
-    Header.Size = UDim2.new(1, 0, 0, 38)
+    Header.Size =
+        UDim2.new(1, 0, 0, 38)
 
-    Header.Position = UDim2.new(0, 0, 0, 0)
+    Header.Position =
+        UDim2.new(0, 0, 0, 0)
 
     Header.BackgroundColor3 =
         Color3.fromRGB(45, 45, 45)
@@ -591,7 +642,8 @@ local function createMainUI()
 
     Header.TextSize = 14
 
-    Header.Font = Enum.Font.GothamBold
+    Header.Font =
+        Enum.Font.GothamBold
 
     Header.AutoButtonColor = false
 
@@ -616,6 +668,8 @@ local function createMainUI()
         Color3.fromRGB(45, 45, 45)
 
     HeaderCover.BorderSizePixel = 0
+
+    HeaderCover.Active = false
 
     HeaderCover.Parent = Header
 
@@ -647,9 +701,12 @@ local function createMainUI()
 
     Toggle.TextSize = 14
 
-    Toggle.Font = Enum.Font.GothamBold
+    Toggle.Font =
+        Enum.Font.GothamBold
 
     Toggle.Active = true
+
+    Toggle.AutoButtonColor = true
 
     Toggle.Parent = Main
 
@@ -657,7 +714,7 @@ local function createMainUI()
 
 
     --==================================================
-    -- DRAG
+    -- MAIN DRAG
     --==================================================
 
     makeDraggable(Header, Main)
@@ -668,6 +725,7 @@ local function createMainUI()
     --==================================================
 
     local instantPickupEnabled = false
+
     local connection = nil
 
 
@@ -679,7 +737,8 @@ local function createMainUI()
 
         if instantPickupEnabled then
 
-            connection = utility:init()
+            connection =
+                utility:init()
 
 
             if connection then
@@ -723,13 +782,17 @@ local function createMainUI()
     -- CLEANUP
     --==================================================
 
-    game:BindToClose(function()
+    ScreenGui.AncestryChanged:Connect(function()
 
-        if connection then
+        if not ScreenGui.Parent then
 
-            utility:unbind(connection)
+            if connection then
 
-            connection = nil
+                utility:unbind(connection)
+
+                connection = nil
+
+            end
 
         end
 
@@ -739,7 +802,7 @@ end
 
 
 --==================================================
--- LOGIN
+-- LOGIN PROCESS
 --==================================================
 
 local loginBusy = false
@@ -755,6 +818,11 @@ LoginButton.Activated:Connect(function()
     local key = KeyBox.Text
 
 
+    -- Remove spaces
+    key = key:gsub("^%s+", "")
+    key = key:gsub("%s+$", "")
+
+
     if key == "" then
 
         LoginStatus.Text =
@@ -767,7 +835,11 @@ LoginButton.Activated:Connect(function()
 
     loginBusy = true
 
-    LoginButton.Text = "CHECKING..."
+    LoginButton.Text =
+        "CHECKING..."
+
+    LoginButton.BackgroundColor3 =
+        Color3.fromRGB(55, 55, 55)
 
     LoginStatus.Text =
         "Connecting to online panel..."
@@ -782,8 +854,14 @@ LoginButton.Activated:Connect(function()
         LoginStatus.Text =
             "✓ " .. message
 
+        LoginStatus.TextColor3 =
+            Color3.fromRGB(80, 220, 110)
+
         LoginButton.Text =
             "SUCCESS"
+
+        LoginButton.BackgroundColor3 =
+            Color3.fromRGB(45, 145, 75)
 
 
         task.wait(0.5)
@@ -800,8 +878,14 @@ LoginButton.Activated:Connect(function()
         LoginStatus.Text =
             "✕ " .. tostring(message)
 
+        LoginStatus.TextColor3 =
+            Color3.fromRGB(255, 90, 90)
+
         LoginButton.Text =
             "LOGIN"
+
+        LoginButton.BackgroundColor3 =
+            Color3.fromRGB(70, 70, 70)
 
     end
 
@@ -815,166 +899,7 @@ end)
 -- START
 --==================================================
 
-print("JAYZ HUB VIP Login Loaded")Header.Active = true
-
-Header.Parent = Main
-
-
---// Header Corners
-local HeaderCorner = Instance.new("UICorner")
-HeaderCorner.CornerRadius = UDim.new(0, 12)
-HeaderCorner.Parent = Header
-
-
---// Bottom cover para squared ang lower header
-local HeaderCover = Instance.new("Frame")
-HeaderCover.Size = UDim2.new(1, 0, 0, 12)
-HeaderCover.Position = UDim2.new(0, 0, 1, -12)
-
-HeaderCover.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-HeaderCover.BorderSizePixel = 0
-
-HeaderCover.Parent = Header
-
-
---// Toggle Button
-local Toggle = Instance.new("TextButton")
-Toggle.Name = "Toggle"
-
-Toggle.Size = UDim2.new(1, -20, 0, 55)
-Toggle.Position = UDim2.new(0, 10, 0, 50)
-
-Toggle.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-Toggle.BorderSizePixel = 0
-
-Toggle.Text = "Enable Instant Pickup"
-Toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
-Toggle.TextSize = 14
-Toggle.Font = Enum.Font.GothamBold
-
-Toggle.Active = true
-Toggle.AutoButtonColor = true
-
-Toggle.Parent = Main
-
-
---// Toggle Corner
-local ToggleCorner = Instance.new("UICorner")
-ToggleCorner.CornerRadius = UDim.new(0, 9)
-ToggleCorner.Parent = Toggle
-
-
---//==================================================
---// DRAG SYSTEM
---//==================================================
-
-local dragging = false
-local dragStart = nil
-local startPosition = nil
-
-local function updateDrag(input)
-
-    if not dragging then
-        return
-    end
-
-    local delta = input.Position - dragStart
-
-    Main.Position = UDim2.new(
-        startPosition.X.Scale,
-        startPosition.X.Offset + delta.X,
-
-        startPosition.Y.Scale,
-        startPosition.Y.Offset + delta.Y
-    )
-end
-
-
-Header.InputBegan:Connect(function(input)
-
-    if input.UserInputType == Enum.UserInputType.Touch
-    or input.UserInputType == Enum.UserInputType.MouseButton1 then
-
-        dragging = true
-        dragStart = input.Position
-        startPosition = Main.Position
-
-        input.Changed:Connect(function()
-
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-
-        end)
-    end
-end)
-
-
-Header.InputChanged:Connect(function(input)
-
-    if input.UserInputType == Enum.UserInputType.MouseMovement
-    or input.UserInputType == Enum.UserInputType.Touch then
-
-        if dragging then
-            updateDrag(input)
-        end
-    end
-end)
-
-
-UserInputService.InputChanged:Connect(function(input)
-
-    if dragging then
-
-        if input.UserInputType == Enum.UserInputType.MouseMovement
-        or input.UserInputType == Enum.UserInputType.Touch then
-
-            updateDrag(input)
-        end
-    end
-end)
-
-
---//==================================================
---// INSTANT PICKUP TOGGLE
---//==================================================
-
-local instantPickupEnabled = false
-local connection = nil
-
-Toggle.Activated:Connect(function()
-
-    instantPickupEnabled = not instantPickupEnabled
-
-    if instantPickupEnabled then
-
-        connection = utility:init()
-
-        Toggle.Text = "✓ Instant Pickup : ON"
-        Toggle.BackgroundColor3 = Color3.fromRGB(45, 145, 75)
-
-    else
-
-        if connection then
-            utility:unbind(connection)
-            connection = nil
-        end
-
-        Toggle.Text = "Instant Pickup : OFF"
-        Toggle.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    end
-end)
-
-
---//==================================================
---// CLEANUP
---//==================================================
-
-game:BindToClose(function()
-
-    if connection then
-        utility:unbind(connection)
-        connection = nil
-    end
-
-end) 
+print("================================")
+print("JAYZ HUB VIP LOGIN")
+print("Online Panel Connected")
+print("================================")
