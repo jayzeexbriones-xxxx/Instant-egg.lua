@@ -17,7 +17,7 @@ local PlayerGui = player:WaitForChild("PlayerGui")
 -- CONFIG
 --==================================================
 
-local PANEL_URL = "YOUR_RAW_PANEL_URL_HERE"
+local PANEL_URL = "https://pastebin.com/raw/PrGsxZ9L"
 
 local HUB_NAME = "JAYZ HUB"
 
