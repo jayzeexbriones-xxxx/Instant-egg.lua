@@ -104,7 +104,7 @@ Header.Position = UDim2.new(0, 0, 0, 0)
 Header.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 Header.BorderSizePixel = 0
 
-Header.Text = "☰  INSTANT PICKUP"
+Header.Text = "☰  JAYZ HUB"
 Header.TextColor3 = Color3.fromRGB(255, 255, 255)
 Header.TextSize = 14
 Header.Font = Enum.Font.GothamBold
@@ -272,4 +272,4 @@ game:BindToClose(function()
         connection = nil
     end
 
-end)
+end) 
