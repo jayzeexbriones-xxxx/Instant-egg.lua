@@ -1,654 +1,462 @@
--- This file was generated at discord.gg/syncrypt
+-- // Grow a Garden 2 | Unified Auto Farm GUI
+-- // Auto Harvest + Auto Sell + Auto Buy + Auto Plant
 
-local t1 = {}
-local v2 = unpack or table.unpack
-local Players = game:GetService("Players")
+local Players      = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local lp           = Players.LocalPlayer
+local Event        = game:GetService("ReplicatedStorage").SharedModules.Packet.RemoteEvent
+local Gardens      = workspace:WaitForChild("Gardens")
 
-t1.value1 = game:GetService("RunService")
-t1.value2 = game:GetService("TweenService")
-t1.value3 = game:GetService("UserInputService")
-t1.value4 = game:GetService("Stats")
-t1.value5 = game:GetService("ProximityPromptService")
-game:GetService("HttpService")
-t1.value6 = Players.LocalPlayer
-local PlayerGui = t1.value6:WaitForChild("PlayerGui")
+-- ══════════════════════════════════════
+--             GLOBAL FLAGS
+-- ══════════════════════════════════════
+getgenv().AutoHarvest  = false
+getgenv().AutoSell     = false
+getgenv().AutoBuy      = false
+getgenv().AutoPlant    = false
+getgenv().SellInterval = 1
+getgenv().BuyInterval  = 1
+getgenv().CachedPlot   = nil
 
-t1.value7 = nil
-t1.value8 = "f888ee6e-c86d-46e1-93d7-0639d6635d42"
-pcall(function()
-    if hookfunction and newcclosure then
-        local u153
-        u153 = hookfunction(Instance.new("RemoteEvent").FireServer, newcclosure(function(p1, ...)
-            local v262 = not t1.value7
+-- ══════════════════════════════════════
+--          HARVEST PACKETS
+-- ══════════════════════════════════════
+local function buildProximityPacket(plantId, fruitId)
+    return buffer.fromstring("\xB2\x00$" .. plantId .. "$" .. fruitId)
+end
 
-            if v262 then
-                v262 = typeof(p1) == "Instance"
+local function buildHarvestPacket(fruits)
+    local payload = "a\x00\x1C"
+    local idx = 1
+    local shovelStr = "Shovel:Shovel"
+    payload = payload .. "\x05" .. string.char(idx) .. "\x0B" .. string.char(#shovelStr) .. shovelStr
+    idx += 1
+    for _, f in ipairs(fruits) do
+        local weight  = math.round(f.SizeMulti * 1000)
+        local itemStr = "Fruit:" .. f.CorePartName .. ":" .. tostring(weight)
+        payload = payload .. "\x05" .. string.char(idx) .. "\x0B" .. string.char(#itemStr) .. itemStr
+        idx += 1
+    end
+    return buffer.fromstring(payload .. "\x00")
+end
 
-                if v262 then
-                    v262 = p1:IsA("RemoteEvent")
+local function buildConfirmPacket(plantId, fruitId, pos)
+    local b = buffer.create(12)
+    buffer.writef32(b, 0, pos.X)
+    buffer.writef32(b, 4, pos.Y)
+    buffer.writef32(b, 8, pos.Z)
+    return buffer.fromstring("\x08\x01$" .. plantId .. "$" .. fruitId .. buffer.tostring(b))
+end
 
-                    if v262 then
-                        v262 = p1.Name:sub(1, 3) == "RE/"
+local function getPlantData()
+    local plantMap = {}
+    for _, plot in ipairs(Gardens:GetChildren()) do
+        local plantsFolder = plot:FindFirstChild("Plants")
+        if not plantsFolder then continue end
+        for _, plant in ipairs(plantsFolder:GetChildren()) do
+            local fruitsFolder = plant:FindFirstChild("Fruits")
+            if not fruitsFolder then continue end
+            for _, fruit in ipairs(fruitsFolder:GetChildren()) do
+                local coreName  = fruit:GetAttribute("CorePartName")
+                local sizeMulti = fruit:GetAttribute("SizeMulti")
+                local plantId   = fruit:GetAttribute("PlantId")
+                local fruitId   = fruit:GetAttribute("FruitId")
+                local age       = fruit:GetAttribute("Age")
+                local maxAge    = fruit:GetAttribute("MaxAge")
+                if not (coreName and sizeMulti and plantId and fruitId) then continue end
+                if age and maxAge and age < maxAge then continue end
+                if not plantMap[plantId] then
+                    local pos = Vector3.new(0, 0, 0)
+                    if fruit:IsA("Model") then
+                        local part = fruit:FindFirstChildWhichIsA("BasePart")
+                        if part then pos = part.Position end
+                    elseif fruit:IsA("BasePart") then
+                        pos = fruit.Position
                     end
+                    plantMap[plantId] = { plantId = plantId, firstFruit = { id = fruitId, pos = pos }, fruits = {} }
+                end
+                table.insert(plantMap[plantId].fruits, { CorePartName = coreName, SizeMulti = sizeMulti })
+            end
+        end
+    end
+    return plantMap
+end
+
+-- ══════════════════════════════════════
+--           SELL PACKETS
+-- ══════════════════════════════════════
+local P1 = buffer.fromstring("\x9B\x00\x1F")
+local P2 = buffer.fromstring("\x9A\x00\x20")
+local P3 = buffer.fromstring("a\x00\x1C\x05\x01\x0B\x0DShovel:Shovel\x00")
+
+-- ══════════════════════════════════════
+--           BUY PACKETS
+-- ══════════════════════════════════════
+local function buyPacket(seedName)
+    return buffer.fromstring("h\x00" .. string.char(#seedName) .. seedName)
+end
+
+getgenv().BuyTargets = {
+    ["Carrot"] = true, ["Strawberry"] = true, ["Blueberry"] = true,
+    ["Tulip"]  = true, ["Bamboo"]     = true, ["Mushroom"]  = true,
+}
+
+local Seeds = {
+    "Carrot","Strawberry","Blueberry","Tomato","Apple","Tulip","Bamboo","Corn",
+    "Cactus","Pineapple","Banana","Grape","Coconut","Green Bean","Mango",
+    "Dragon Fruit","Acorn","Cherry","Mushroom","Poison Apple","Pomegranate",
+    "Sunflower","Moon Bloom","Venus Fly Trap","Dragons Breath",
+}
+
+-- ══════════════════════════════════════
+--           PLANT HELPERS
+-- ══════════════════════════════════════
+local SEED_SET = {}
+for _, n in ipairs(Seeds) do SEED_SET[n] = true end
+
+local function buildPlantPacket(seedName, pos)
+    local b = buffer.create(12)
+    buffer.writef32(b, 0, pos.X)
+    buffer.writef32(b, 4, pos.Y)
+    buffer.writef32(b, 8, pos.Z)
+    return buffer.fromstring("\x04\x00" .. buffer.tostring(b) .. string.char(#seedName) .. seedName)
+end
+
+local function getOwnPlot()
+    if getgenv().CachedPlot and getgenv().CachedPlot.Parent then
+        return getgenv().CachedPlot
+    end
+    local uid = tostring(lp.UserId)
+    for _, plot in ipairs(Gardens:GetChildren()) do
+        local pf = plot:FindFirstChild("Plants")
+        if pf then
+            for _, plant in ipairs(pf:GetChildren()) do
+                if plant.Name:sub(1, #uid) == uid then
+                    getgenv().CachedPlot = plot
+                    return plot
                 end
             end
-
-            if v262 then
-                t1.value7 = p1
-            end
-
-            return u153(p1, ...)
-        end))
-    end
-end)
-task.spawn(function()
-    task.wait(2)
-
-    if t1.value7 then
-        return
-    end
-
-    for _, descendant in ipairs(game:GetDescendants()) do
-        local v156 = descendant:IsA("RemoteEvent")
-
-        if v156 then
-            v156 = descendant.Name:sub(1, 3) == "RE/"
-        end
-
-        if v156 then
-            t1.value7 = descendant
-
-            return
         end
     end
-end)
-
-function t1.value9()
-    if not t1.value7 then
-        for _, descendant in ipairs(game:GetDescendants()) do
-            local v163 = descendant:IsA("RemoteEvent")
-
-            if v163 then
-                v163 = descendant.Name:sub(1, 3) == "RE/"
-            end
-
-            if v163 then
-                t1.value7 = descendant
-
-                break
+    if lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
+        local myPos = lp.Character.HumanoidRootPart.Position
+        local best, bestDist = nil, math.huge
+        for _, plot in ipairs(Gardens:GetChildren()) do
+            local sp = plot:FindFirstChild("SpawnPoint")
+            if sp then
+                local d = (sp.Position - myPos).Magnitude
+                if d < bestDist then bestDist = d; best = plot end
             end
         end
-    end
-
-    if not t1.value7 then
-        local Character = t1.value6.Character
-
-        if Character then
-            local Humanoid = Character:FindFirstChildOfClass("Humanoid")
-
-            if Humanoid then
-                Humanoid.Health = 0
-            end
+        if best and bestDist < 150 then
+            getgenv().CachedPlot = best
+            return best
         end
-
-        return
     end
-
-    local Character = t1.value6.Character
-    local v167 = Character
-
-    if Character then
-        v167 = Character:FindFirstChildOfClass("Humanoid")
-    end
-
-    local v168 = v167
-    local v169 = v168
-
-    if v169 then
-        v169 = v168.Health <= 0
-    end
-
-    if v169 then
-        pcall(function()
-            t1.value7:FireServer(t1.value8, t1.value6, "balloon")
-        end)
-
-        return
-    end
-
-    local u170 = false
-    local t2 = {}
-
-    if v168 then
-        table.insert(t2, v168.Died:Connect(function()
-            u170 = true
-        end))
-        table.insert(t2, v168:GetPropertyChangedSignal("Health"):Connect(function()
-            if v168.Health <= 0 then
-                u170 = true
-            end
-        end))
-    end
-
-    if Character then
-        table.insert(t2, Character.AncestryChanged:Connect(function(_, parent)
-            if not parent then
-                u170 = true
-            end
-        end))
-    end
-
-    task.spawn(function()
-        for _ = 1, 50 do
-            if u170 then
-                break
-            end
-
-            pcall(function()
-                t1.value7:FireServer(t1.value8, t1.value6, "balloon")
-            end)
-            task.wait()
-        end
-
-        for _, v in ipairs(t2) do
-            local v270 = v
-
-            pcall(function()
-                v270:Disconnect()
-            end)
-        end
-    end)
 end
-function t1.value10()
-    return ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 0, 0)),
-		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(40, 80, 180)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
-	})
-end
-function t1.value11(p3, p4, p5)
-    local v160 = p5 or 45
 
-    task.spawn(function()
-        local n1 = 0
-
-        while true do
-            local v264 = p3
-
-            if v264 then
-                v264 = p3.Parent
-            end
-
-            if not v264 then
-                break
-            end
-
-            n1 += t1.value1.Heartbeat:Wait()
-            p3.Rotation = p4 + math.sin(n1 * (v160 / 50)) * 30
+local SPACING = 5
+local function columnToPositions(col)
+    local positions = {}
+    local cx, cy, cz = col.Position.X, col.Position.Y, col.Position.Z
+    local sx, sz = col.Size.X, col.Size.Z
+    local Y = cy + 0.25
+    local x = cx - sx/2 + SPACING/2
+    while x <= cx + sx/2 - SPACING/2 + 0.01 do
+        local z = cz - sz/2 + SPACING/2
+        while z <= cz + sz/2 - SPACING/2 + 0.01 do
+            table.insert(positions, Vector3.new(x, Y, z))
+            z = z + SPACING
         end
-    end)
-end
-local function v5()
-    return ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(60, 100, 200)),
-		ColorSequenceKeypoint.new(0.35, Color3.fromRGB(60, 100, 200)),
-		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(200, 220, 255)),
-		ColorSequenceKeypoint.new(0.65, Color3.fromRGB(60, 100, 200)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 100, 200))
-	})
-end
-function t1.value12(p6)
-    local p6BackgroundColor3 = p6.BackgroundColor3
-
-    p6.BackgroundColor3 = Color3.fromRGB(40, 60, 100)
-    task.delay(0.12, function()
-        local v273 = p6
-
-        if v273 then
-            v273 = p6.Parent
-        end
-
-        if v273 then
-            p6.BackgroundColor3 = p6BackgroundColor3
-        end
-    end)
-end
-local function v6(p7, _, p9)
-    local uDim2 = UDim2.new(1, -14, 0.5, -6)
-    local uDim2_2 = UDim2.new(0, 2, 0.5, -6)
-    local color3 = Color3.fromRGB(100, 150, 255)
-    local color3_2 = Color3.fromRGB(60, 80, 140)
-    local v188 = p9 and uDim2 or uDim2_2
-    local value2 = t1.value2
-    local tweenInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad)
-    local v191 = p9 and color3 or color3_2
-
-    value2:Create(p7, tweenInfo, {
-		Position = v188,
-		BackgroundColor3 = v191
-	}):Play()
-end
-local function v7(p10, p11)
-    if not p11 then
-        p11 = p10
+        x = x + SPACING
     end
-    local u194
-    local inputPosition
-    local p10Position
-    p11.InputBegan:Connect(function(input)
-        local v275 = input.UserInputType == Enum.UserInputType.MouseButton1
-
-        if not v275 then
-            v275 = input.UserInputType == Enum.UserInputType.Touch
-        end
-
-        if v275 then
-            u194 = true
-            inputPosition = input.Position
-            p10Position = p10.Position
-        end
-    end)
-    t1.value3.InputChanged:Connect(function(input)
-        local v277 = u194
-
-        if v277 then
-            v277 = input.UserInputType == Enum.UserInputType.MouseMovement
-
-            if not v277 then
-                v277 = input.UserInputType == Enum.UserInputType.Touch
-            end
-        end
-
-        if v277 then
-            local v278 = input.Position - inputPosition
-
-            p10.Position = UDim2.new(p10Position.X.Scale, p10Position.X.Offset + v278.X, p10Position.Y.Scale, p10Position.Y.Offset + v278.Y)
-        end
-    end)
-    t1.value3.InputEnded:Connect(function(input)
-        local v280 = input.UserInputType == Enum.UserInputType.MouseButton1
-
-        if not v280 then
-            v280 = input.UserInputType == Enum.UserInputType.Touch
-        end
-
-        if not v280 then
-        end
-    end)
+    return positions
 end
+
+local function isOccupied(pos, plantsFolder, pending)
+    for _, plant in ipairs(plantsFolder:GetChildren()) do
+        local base = plant:FindFirstChildWhichIsA("BasePart", true)
+        if base then
+            local dx = base.Position.X - pos.X
+            local dz = base.Position.Z - pos.Z
+            if (dx*dx + dz*dz) < 9 then return true end
+        end
+    end
+    for _, p in ipairs(pending) do
+        local dx = p.X - pos.X
+        local dz = p.Z - pos.Z
+        if (dx*dx + dz*dz) < 9 then return true end
+    end
+    return false
+end
+
+local function nextSeed()
+    for _, tool in ipairs(lp.Backpack:GetChildren()) do
+        if SEED_SET[tool.Name] then return tool end
+    end
+    if lp.Character then
+        for _, tool in ipairs(lp.Character:GetChildren()) do
+            if tool:IsA("Tool") and SEED_SET[tool.Name] then return tool end
+        end
+    end
+end
+
+local function plantAt(pos)
+    local tool = nextSeed()
+    if not tool then return false end
+    local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+    local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return false end
+    hrp.CFrame = CFrame.new(pos.X, pos.Y + 3, pos.Z)
+    task.wait(0.08)
+    if tool.Parent == lp.Backpack then
+        hum:EquipTool(tool)
+        task.wait(0.08)
+    end
+    local equipped = lp.Character:FindFirstChild(tool.Name)
+    if not equipped then hum:UnequipTools(); return false end
+    Event:FireServer(buildPlantPacket(equipped.Name, pos), {equipped})
+    task.wait(0.08)
+    hum:UnequipTools()
+    return true
+end
+
+-- cache plot on load
+task.defer(function() getOwnPlot() end)
+
+-- ══════════════════════════════════════
+--                GUI
+-- ══════════════════════════════════════
 local ScreenGui = Instance.new("ScreenGui")
-
-ScreenGui.Name = "InfinHub"
-ScreenGui.ResetOnSpawn = false
+ScreenGui.Name           = "GaG2FarmGui"
+ScreenGui.ResetOnSpawn   = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent = PlayerGui
-local Frame = Instance.new("Frame")
+ScreenGui.Parent         = game:GetService("CoreGui")
 
-Frame.Position = UDim2.new(0.5, -100, 0.3, 0)
-Frame.Size = UDim2.new(0, 200, 0, 250)
-Frame.BackgroundColor3 = Color3.fromRGB(10, 15, 30)
-Frame.BackgroundTransparency = 0.3
-Frame.BorderSizePixel = 0
-Frame.ClipsDescendants = true
-Frame.Name = "Frame"
-Frame.Parent = ScreenGui
-local UICorner = Instance.new("UICorner")
+-- main frame
+local Frame = Instance.new("Frame", ScreenGui)
+Frame.Size             = UDim2.new(0, 240, 0, 330)
+Frame.Position         = UDim2.new(0, 20, 0, 20)
+Frame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+Frame.BorderSizePixel  = 0
+Frame.Active           = true
+Frame.Draggable        = true
+Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 12)
 
-UICorner.CornerRadius = UDim.new(0, 10)
-UICorner.Parent = Frame
-local UIStroke = Instance.new("UIStroke")
+-- title bar
+local TitleBar = Instance.new("Frame", Frame)
+TitleBar.Size             = UDim2.new(1, 0, 0, 36)
+TitleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+TitleBar.BorderSizePixel  = 0
+Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 12)
 
-UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-UIStroke.Color = Color3.fromRGB(40, 80, 180)
-UIStroke.Thickness = 2
-UIStroke.Parent = Frame
-local UIGradient = Instance.new("UIGradient")
+local TitleLabel = Instance.new("TextLabel", TitleBar)
+TitleLabel.Size                   = UDim2.new(1, -10, 1, 0)
+TitleLabel.Position               = UDim2.new(0, 10, 0, 0)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Font                   = Enum.Font.GothamBold
+TitleLabel.TextColor3             = Color3.fromRGB(220, 220, 220)
+TitleLabel.TextSize               = 14
+TitleLabel.Text                   = "🌱 Grow a Garden 2"
+TitleLabel.TextXAlignment         = Enum.TextXAlignment.Left
 
-UIGradient.Color = t1.value10()
-UIGradient.Rotation = 203.25
-UIGradient.Parent = UIStroke
-t1.value11(UIGradient, 203.25)
+-- divider line
+local Divider = Instance.new("Frame", Frame)
+Divider.Size             = UDim2.new(1, -24, 0, 1)
+Divider.Position         = UDim2.new(0, 12, 0, 40)
+Divider.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+Divider.BorderSizePixel  = 0
 
-local TextLabel = Instance.new("TextLabel")
+-- helper to build each toggle row
+local tweenInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad)
 
-TextLabel.Text = "Infin Hub"
-TextLabel.TextColor3 = Color3.fromRGB(100, 150, 255)
-TextLabel.TextSize = 12
-TextLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Heavy, Enum.FontStyle.Normal)
-TextLabel.TextXAlignment = Enum.TextXAlignment.Center
-TextLabel.Position = UDim2.new(0, 8, 0, 4)
-TextLabel.Size = UDim2.new(1, -40, 0, 14)
-TextLabel.BackgroundTransparency = 1
-TextLabel.Parent = Frame
-local UIGradient2 = Instance.new("UIGradient")
+local function makeRow(parent, yPos, label, statusDefault)
+    local row = Instance.new("Frame", parent)
+    row.Size             = UDim2.new(1, -20, 0, 58)
+    row.Position         = UDim2.new(0, 10, 0, yPos)
+    row.BackgroundColor3 = Color3.fromRGB(28, 28, 35)
+    row.BorderSizePixel  = 0
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
 
-UIGradient2.Color = v5()
-UIGradient2.Offset = Vector2.new(0.996, 0)
-UIGradient2.Parent = TextLabel
+    local btn = Instance.new("TextButton", row)
+    btn.Size             = UDim2.new(1, -10, 0, 32)
+    btn.Position         = UDim2.new(0, 5, 0, 5)
+    btn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    btn.Font             = Enum.Font.GothamBold
+    btn.TextColor3       = Color3.fromRGB(255, 255, 255)
+    btn.TextSize         = 13
+    btn.Text             = label .. ": OFF"
+    btn.BorderSizePixel  = 0
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+
+    local status = Instance.new("TextLabel", row)
+    status.Size                   = UDim2.new(1, 0, 0, 16)
+    status.Position               = UDim2.new(0, 5, 0, 40)
+    status.BackgroundTransparency = 1
+    status.Font                   = Enum.Font.Gotham
+    status.TextColor3             = Color3.fromRGB(110, 110, 130)
+    status.TextSize               = 10
+    status.Text                   = statusDefault or "Idle"
+    status.TextXAlignment         = Enum.TextXAlignment.Left
+
+    return btn, status
+end
+
+local harvestBtn, harvestStatus = makeRow(Frame, 50,  "Auto Harvest", "Idle")
+local sellBtn,    sellStatus    = makeRow(Frame, 120, "Auto Sell",    "Idle")
+local buyBtn,     buyStatus     = makeRow(Frame, 190, "Auto Buy",     "Idle")
+local plantBtn,   plantStatus   = makeRow(Frame, 260, "Auto Plant",   "Idle")
+
+local function toggle(btn, flag, onLabel, offLabel, onStatus, statusLabel)
+    getgenv()[flag] = not getgenv()[flag]
+    if getgenv()[flag] then
+        btn.Text            = onLabel .. ": ON"
+        statusLabel.Text    = onStatus
+        statusLabel.TextColor3 = Color3.fromRGB(60, 210, 90)
+        TweenService:Create(btn, tweenInfo, { BackgroundColor3 = Color3.fromRGB(50, 180, 50) }):Play()
+    else
+        btn.Text            = offLabel .. ": OFF"
+        statusLabel.Text    = "Idle"
+        statusLabel.TextColor3 = Color3.fromRGB(110, 110, 130)
+        TweenService:Create(btn, tweenInfo, { BackgroundColor3 = Color3.fromRGB(200, 50, 50) }):Play()
+    end
+end
+
+harvestBtn.MouseButton1Click:Connect(function() toggle(harvestBtn, "AutoHarvest", "Auto Harvest", "Auto Harvest", "Scanning...", harvestStatus) end)
+sellBtn.MouseButton1Click:Connect(function()    toggle(sellBtn,    "AutoSell",    "Auto Sell",    "Auto Sell",    "Selling...",  sellStatus)    end)
+buyBtn.MouseButton1Click:Connect(function()     toggle(buyBtn,     "AutoBuy",     "Auto Buy",     "Auto Buy",     "Buying...",   buyStatus)     end)
+plantBtn.MouseButton1Click:Connect(function()   toggle(plantBtn,   "AutoPlant",   "Auto Plant",   "Auto Plant",   "Planting...", plantStatus)   end)
+
+-- ══════════════════════════════════════
+--           AUTO HARVEST LOOP
+-- ══════════════════════════════════════
+local harvestCount = 0
 task.spawn(function()
-    local n2 = 0
-
     while true do
-        local v198 = UIGradient2
-
-        if v198 then
-            v198 = UIGradient2.Parent
+        if getgenv().AutoHarvest then
+            local plantMap = getPlantData()
+            local anyFound = false
+            for _, data in pairs(plantMap) do
+                if not getgenv().AutoHarvest then break end
+                anyFound = true
+                local pId = data.plantId
+                local fId = data.firstFruit.id
+                local pos = data.firstFruit.pos
+                pcall(function() Event:FireServer(buildProximityPacket(pId, fId)) end)
+                task.wait(0.01)
+                pcall(function() Event:FireServer(buildHarvestPacket(data.fruits)) end)
+                task.wait(0.01)
+                pcall(function() Event:FireServer(buildConfirmPacket(pId, fId, pos)) end)
+                harvestCount += #data.fruits
+                harvestStatus.Text = "Harvested: " .. harvestCount
+                task.wait(0.05)
+            end
+            if not anyFound then harvestStatus.Text = "Waiting for fruits..." end
+            task.wait(0.1)
+        else
+            task.wait(0.2)
         end
-
-        if not v198 then
-            break
-        end
-
-        n2 += t1.value1.Heartbeat:Wait()
-        UIGradient2.Offset = Vector2.new(math.sin(n2 * 0.6) * 0.5, 0)
     end
 end)
 
-local TextLabel2 = Instance.new("TextLabel")
+-- ══════════════════════════════════════
+--            AUTO SELL LOOP
+-- ══════════════════════════════════════
+local sellCount = 0
+task.spawn(function()
+    while true do
+        if getgenv().AutoSell then
+            pcall(function() Event:FireServer(P1) end)
+            task.wait(0.01)
+            pcall(function() Event:FireServer(P2) end)
+            task.wait(0.01)
+            pcall(function() Event:FireServer(P3) end)
+            sellCount += 1
+            sellStatus.Text = "Sold: " .. sellCount .. "x"
+            task.wait(getgenv().SellInterval)
+        else
+            task.wait(0.2)
+        end
+    end
+end)
 
-TextLabel2.Text = "Flash TP + Speed"
-TextLabel2.TextColor3 = Color3.fromRGB(150, 180, 255)
-TextLabel2.TextTransparency = 0.4
-TextLabel2.TextSize = 9
-TextLabel2.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-TextLabel2.TextXAlignment = Enum.TextXAlignment.Center
-TextLabel2.Position = UDim2.new(0, 8, 0, 20)
-TextLabel2.Size = UDim2.new(1, -40, 0, 10)
-TextLabel2.BackgroundTransparency = 1
-TextLabel2.Parent = Frame
-local TextButton = Instance.new("TextButton")
+-- ══════════════════════════════════════
+--            AUTO BUY LOOP
+-- ══════════════════════════════════════
+local buyCount = 0
+task.spawn(function()
+    while true do
+        if getgenv().AutoBuy then
+            for _, name in ipairs(Seeds) do
+                if not getgenv().AutoBuy then break end
+                if getgenv().BuyTargets[name] then
+                    pcall(function() Event:FireServer(buyPacket(name)) end)
+                    buyCount += 1
+                    buyStatus.Text = "Bought: " .. buyCount
+                    task.wait(0.15)
+                end
+            end
+            task.wait(getgenv().BuyInterval)
+        else
+            task.wait(0.2)
+        end
+    end
+end)
 
-TextButton.Text = "-"
-TextButton.TextColor3 = Color3.fromRGB(100, 150, 255)
-TextButton.TextSize = 14
-TextButton.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Heavy, Enum.FontStyle.Normal)
-TextButton.Position = UDim2.new(1, -24, 0, 4)
-TextButton.Size = UDim2.new(0, 20, 0, 20)
-TextButton.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
-TextButton.BorderSizePixel = 0
-TextButton.Parent = Frame
-local UICorner2 = Instance.new("UICorner")
+-- ══════════════════════════════════════
+--           AUTO PLANT LOOP
+-- ══════════════════════════════════════
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if not getgenv().AutoPlant then continue end
 
-UICorner2.CornerRadius = UDim.new(0, 5)
-UICorner2.Parent = TextButton
-local UIStroke2 = Instance.new("UIStroke")
+        local plot = getOwnPlot()
+        if not plot then
+            plantStatus.Text = "No plot — stand in garden"
+            task.wait(3)
+            continue
+        end
 
-UIStroke2.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-UIStroke2.Color = Color3.fromRGB(40, 80, 180)
-UIStroke2.Thickness = 1.5
-UIStroke2.Parent = TextButton
-local UIGradient3 = Instance.new("UIGradient")
+        local vis    = plot:FindFirstChild("Visual")
+        local plants = plot:FindFirstChild("Plants")
+        if not vis or not plants then task.wait(2); continue end
 
-UIGradient3.Color = t1.value10()
-UIGradient3.Rotation = 203.25
-UIGradient3.Parent = UIStroke2
-t1.value11(UIGradient3, 203.25)
+        local col1 = vis:FindFirstChild("PlantAreaColumn1")
+        local col2 = vis:FindFirstChild("PlantAreaColumn2")
 
-local Frame2 = Instance.new("Frame")
+        local allPos = {}
+        if col1 then for _, p in ipairs(columnToPositions(col1)) do table.insert(allPos, p) end end
+        if col2 then for _, p in ipairs(columnToPositions(col2)) do table.insert(allPos, p) end end
 
-Frame2.Position = UDim2.new(0, 6, 0, 34)
-Frame2.Size = UDim2.new(1, -12, 0, 26)
-Frame2.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
-Frame2.BorderSizePixel = 0
-Frame2.Parent = Frame
-Instance.new("UICorner").Parent = Frame2
-local UIStroke3 = Instance.new("UIStroke")
+        if #allPos == 0 then task.wait(2); continue end
 
-UIStroke3.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-UIStroke3.Color = Color3.fromRGB(40, 80, 180)
-UIStroke3.Thickness = 1.2
-UIStroke3.Parent = Frame2
-local UIGradient4 = Instance.new("UIGradient")
+        local pending  = {}
+        local planted  = 0
 
-UIGradient4.Color = t1.value10()
-UIGradient4.Rotation = 203.25
-UIGradient4.Parent = UIStroke3
-t1.value11(UIGradient4, 203.25)
-t1.value13 = Instance.new("TextLabel")
-t1.value13.Text = "Flash TP: OFF"
-t1.value13.TextColor3 = Color3.fromRGB(150, 180, 255)
-t1.value13.TextSize = 10
-t1.value13.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Heavy, Enum.FontStyle.Normal)
-t1.value13.TextXAlignment = Enum.TextXAlignment.Left
-t1.value13.Position = UDim2.new(0, 6, 0, 0)
-t1.value13.Size = UDim2.new(1, -50, 1, 0)
-t1.value13.BackgroundTransparency = 1
-t1.value13.Parent = Frame2
-t1.value14 = Instance.new("Frame")
-t1.value14.Position = UDim2.new(1, -36, 0.5, -8)
-t1.value14.Size = UDim2.new(0, 30, 0, 16)
-t1.value14.BackgroundTransparency = 1
-t1.value14.Parent = Frame2
-Instance.new("UICorner").Parent = t1.value14
-local UIStroke4 = Instance.new("UIStroke")
+        for _, tilePos in ipairs(allPos) do
+            if not getgenv().AutoPlant then break end
+            if isOccupied(tilePos, plants, pending) then continue end
+            if not nextSeed() then
+                plantStatus.Text = "Out of seeds"
+                break
+            end
+            local ok = plantAt(tilePos)
+            if ok then
+                planted += 1
+                table.insert(pending, tilePos)
+                plantStatus.Text = "Planted: " .. planted
+            end
+            task.wait(0.35)
+        end
 
-UIStroke4.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-UIStroke4.Color = Color3.fromRGB(40, 80, 180)
-UIStroke4.Thickness = 1.5
-UIStroke4.Parent = t1.value14
-local UIGradient5 = Instance.new("UIGradient")
+        local sp = plot:FindFirstChild("SpawnPoint")
+        if sp and lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
+            lp.Character.HumanoidRootPart.CFrame = CFrame.new(sp.Position + Vector3.new(0, 3, 0))
+        end
 
-UIGradient5.Color = t1.value10()
-UIGradient5.Rotation = 203.25
-UIGradient5.Parent = UIStroke4
-t1.value11(UIGradient5, 203.25)
-t1.value15 = Instance.new("Frame")
-t1.value15.Position = UDim2.new(0, 2, 0.5, -6)
-t1.value15.Size = UDim2.new(0, 12, 0, 12)
-t1.value15.BackgroundColor3 = Color3.fromRGB(60, 80, 140)
-t1.value15.Parent = t1.value14
-local UICorner3 = Instance.new("UICorner")
+        task.wait(3)
+    end
+end)
 
-UICorner3.CornerRadius = UDim.new(0, 6)
-UICorner3.Parent = t1.value15
-local TextButton2 = Instance.new("TextButton")
-
-TextButton2.Text = ""
-TextButton2.Size = UDim2.new(1, 0, 1, 0)
-TextButton2.BackgroundTransparency = 1
-TextButton2.Parent = Frame2
-local Frame3 = Instance.new("Frame")
-
-Frame3.Position = UDim2.new(0, 6, 0, 66)
-Frame3.Size = UDim2.new(1, -12, 0, 34)
-Frame3.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
-Frame3.BorderSizePixel = 0
-Frame3.Parent = Frame
-Instance.new("UICorner").Parent = Frame3
-local UIStroke5 = Instance.new("UIStroke")
-
-UIStroke5.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-UIStroke5.Color = Color3.fromRGB(40, 80, 180)
-UIStroke5.Thickness = 1.2
-UIStroke5.Parent = Frame3
-local UIGradient6 = Instance.new("UIGradient")
-
-UIGradient6.Color = t1.value10()
-UIGradient6.Rotation = 203.25
-UIGradient6.Parent = UIStroke5
-t1.value11(UIGradient6, 203.25)
-
-local TextLabel3 = Instance.new("TextLabel")
-
-TextLabel3.Text = "Trigger %"
-TextLabel3.TextColor3 = Color3.fromRGB(150, 180, 255)
-TextLabel3.TextSize = 10
-TextLabel3.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Heavy, Enum.FontStyle.Normal)
-TextLabel3.TextXAlignment = Enum.TextXAlignment.Left
-TextLabel3.Position = UDim2.new(0, 6, 0, 2)
-TextLabel3.Size = UDim2.new(0, 55, 0, 14)
-TextLabel3.BackgroundTransparency = 1
-TextLabel3.Parent = Frame3
-t1.value16 = Instance.new("TextLabel")
-t1.value16.Text = "93%"
-t1.value16.TextColor3 = Color3.fromRGB(100, 150, 255)
-t1.value16.TextSize = 10
-t1.value16.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Heavy, Enum.FontStyle.Normal)
-t1.value16.TextXAlignment = Enum.TextXAlignment.Right
-t1.value16.Position = UDim2.new(1, -38, 0, 2)
-t1.value16.Size = UDim2.new(0, 34, 0, 14)
-t1.value16.BackgroundTransparency = 1
-t1.value16.Parent = Frame3
-t1.value17 = Instance.new("Frame")
-t1.value17.Position = UDim2.new(0, 6, 0, 22)
-t1.value17.Size = UDim2.new(1, -12, 0, 8)
-t1.value17.BackgroundColor3 = Color3.fromRGB(40, 50, 70)
-t1.value17.BorderSizePixel = 0
-t1.value17.Parent = Frame3
-local UICorner4 = Instance.new("UICorner")
-
-UICorner4.CornerRadius = UDim.new(0, 4)
-UICorner4.Parent = t1.value17
-t1.value18 = Instance.new("Frame")
-t1.value18.Size = UDim2.new(0.93, 0, 1, 0)
-t1.value18.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
-t1.value18.BorderSizePixel = 0
-t1.value18.Parent = t1.value17
-local UICorner5 = Instance.new("UICorner")
-
-UICorner5.CornerRadius = UDim.new(0, 4)
-UICorner5.Parent = t1.value18
-t1.value19 = Instance.new("Frame")
-t1.value19.Position = UDim2.new(0.93, 0, 0.5, 0)
-t1.value19.Size = UDim2.new(0, 12, 0, 12)
-t1.value19.AnchorPoint = Vector2.new(0.5, 0.5)
-t1.value19.BackgroundColor3 = Color3.fromRGB(20, 50, 160)
-t1.value19.BorderSizePixel = 0
-t1.value19.Parent = t1.value17
-local UICorner6 = Instance.new("UICorner")
-
-UICorner6.CornerRadius = UDim.new(1, 0)
-UICorner6.Parent = t1.value19
-local Frame4 = Instance.new("Frame")
-
-Frame4.Position = UDim2.new(0, 6, 0, 106)
-Frame4.Size = UDim2.new(1, -12, 0, 26)
-Frame4.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
-Frame4.BorderSizePixel = 0
-Frame4.Parent = Frame
-Instance.new("UICorner").Parent = Frame4
-local UIStroke6 = Instance.new("UIStroke")
-
-UIStroke6.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-UIStroke6.Color = Color3.fromRGB(40, 80, 180)
-UIStroke6.Thickness = 1.2
-UIStroke6.Parent = Frame4
-local UIGradient7 = Instance.new("UIGradient")
-
-UIGradient7.Color = t1.value10()
-UIGradient7.Rotation = 203.25
-UIGradient7.Parent = UIStroke6
-t1.value11(UIGradient7, 203.25)
-t1.value20 = Instance.new("TextLabel")
-t1.value20.Text = "Speed Boost: OFF"
-t1.value20.TextColor3 = Color3.fromRGB(150, 180, 255)
-t1.value20.TextSize = 10
-t1.value20.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Heavy, Enum.FontStyle.Normal)
-t1.value20.TextXAlignment = Enum.TextXAlignment.Left
-t1.value20.Position = UDim2.new(0, 6, 0, 0)
-t1.value20.Size = UDim2.new(1, -50, 1, 0)
-t1.value20.BackgroundTransparency = 1
-t1.value20.Parent = Frame4
-t1.value21 = Instance.new("Frame")
-t1.value21.Position = UDim2.new(1, -36, 0.5, -8)
-t1.value21.Size = UDim2.new(0, 30, 0, 16)
-t1.value21.BackgroundTransparency = 1
-t1.value21.Parent = Frame4
-Instance.new("UICorner").Parent = t1.value21
-local UIStroke7 = Instance.new("UIStroke")
-
-UIStroke7.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-UIStroke7.Color = Color3.fromRGB(40, 80, 180)
-UIStroke7.Thickness = 1.5
-UIStroke7.Parent = t1.value21
-local UIGradient8 = Instance.new("UIGradient")
-
-UIGradient8.Color = t1.value10()
-UIGradient8.Rotation = 203.25
-UIGradient8.Parent = UIStroke7
-t1.value11(UIGradient8, 203.25)
-t1.value22 = Instance.new("Frame")
-t1.value22.Position = UDim2.new(0, 2, 0.5, -6)
-t1.value22.Size = UDim2.new(0, 12, 0, 12)
-t1.value22.BackgroundColor3 = Color3.fromRGB(60, 80, 140)
-t1.value22.Parent = t1.value21
-local UICorner7 = Instance.new("UICorner")
-
-UICorner7.CornerRadius = UDim.new(0, 6)
-UICorner7.Parent = t1.value22
-local TextButton3 = Instance.new("TextButton")
-
-TextButton3.Text = ""
-TextButton3.Size = UDim2.new(1, 0, 1, 0)
-TextButton3.BackgroundTransparency = 1
-TextButton3.Parent = Frame4
-local Frame5 = Instance.new("Frame")
-
-Frame5.Position = UDim2.new(0, 6, 0, 138)
-Frame5.Size = UDim2.new(1, -12, 0, 34)
-Frame5.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
-Frame5.BorderSizePixel = 0
-Frame5.Parent = Frame
-Instance.new("UICorner").Parent = Frame5
-local UIStroke8 = Instance.new("UIStroke")
-
-UIStroke8.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-UIStroke8.Color = Color3.fromRGB(40, 80, 180)
-UIStroke8.Thickness = 1.2
-UIStroke8.Parent = Frame5
-local UIGradient9 = Instance.new("UIGradient")
-
-UIGradient9.Color = t1.value10()
-UIGradient9.Rotation = 203.25
-UIGradient9.Parent = UIStroke8
-t1.value11(UIGradient9, 203.25)
-
-local TextLabel4 = Instance.new("TextLabel")
-
-TextLabel4.Text = "Speed:"
-TextLabel4.TextColor3 = Color3.fromRGB(150, 180, 255)
-TextLabel4.TextSize = 9
-TextLabel4.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-TextLabel4.TextXAlignment = Enum.TextXAlignment.Left
-TextLabel4.Position = UDim2.new(0, 6, 0, 10)
-TextLabel4.Size = UDim2.new(0, 42, 0, 14)
-TextLabel4.BackgroundTransparency = 1
-TextLabel4.Parent = Frame5
-t1.value23 = Instance.new("TextBox")
-t1.value23.Text = "27"
-t1.value23.TextColor3 = Color3.fromRGB(100, 150, 255)
-t1.value23.TextSize = 10
-t1.value23.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold, Enum.FontStyle.Normal)
-t1.value23.Position = UDim2.new(0, 50, 0, 8)
-t1.value23.Size = UDim2.new(0, 50, 0, 20)
-t1.value23.BackgroundColor3 = Color3.fromRGB(15, 20, 40)
-t1.value23.BorderSizePixel = 0
-t1.value23.Parent = Frame5
-local UICorner8 = Instance.new("UICorner")
-
-UICorner8.CornerRadius = UDim.new(0, 4)
-UICorner8.Parent = t1.value23
-local UIStroke9 = Instance.new("UIStroke")
-
-UIStroke9.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-UIStroke9.Color = Color3.fromRGB(40, 80, 180)
-UIStroke9.Parent = t1.value23
-local UIGradient10 = Instance.new("UIGradient")
-
-UIGradient10.Color = t1.value10()
-UIGradient10.Rotation = 203.25
-UIGradient10.Parent = UIStroke9
-t1.value11(UIGradient10, 203.25)
-t1.value24 = Instance.new("TextButton")
-t1.value24.Text = "Auto Position"
-t1.value24.TextColor3 = Color3.fromRGB(100, 150, 255)
-t1.value24.TextSize = 9
-t1.value24.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold, Enum.FontStyle.Normal)
-t1.value24.Position = UDim2.new(0.5, -50, 0, 178)
-t1.value24.Size = UDim2.new(0, 100, 0, 24)
-t1.value24.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
-t1.value24.BorderSizePixel = 0
-t1.value24.Parent = Frame
-local UICorner9 = Instance.new("UICorner")
-
-UICorner9.CornerRadius = UDim.
+print("[GaG2 Farm] Loaded — all four toggles ready")
