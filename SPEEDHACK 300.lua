@@ -55,38 +55,36 @@ utility:init()
 
 -- UI Setup
 local ScreenGui = Instance.new("ScreenGui")
-local DragUI = Instance.new("Frame")
-local DragArea = Instance.new("TextButton")
-local MainFrame = Instance.new("Frame")
-local SpeedHackToggle = Instance.new("TextButton")
-local InstantPickupToggle = Instance.new("TextButton")
-local UICorner = Instance.new("UICorner")
-
 ScreenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
 ScreenGui.Name = "MyDragableUI"
 
+local DragUI = Instance.new("Frame")
 DragUI.Size = UDim2.new(0, 200, 0, 150)
 DragUI.Position = UDim2.new(0.5, -100, 0.5, -75)
 DragUI.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 DragUI.BorderSizePixel = 0
+local UICorner = Instance.new("UICorner")
 UICorner.CornerRadius = UDim.new(0, 8)
 UICorner.Parent = DragUI
 DragUI.Parent = ScreenGui
 
-DragArea.Size = UDim2.new(1, 0, 0, 30)
-DragArea.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-DragArea.Position = UDim2.new(0, 0, 0, 0)
-DragArea.Text = "Drag me"
-DragArea.TextColor3 = Color3.fromRGB(255, 255, 255)
-DragArea.Font = Enum.Font.GothamSemibold
-DragArea.TextSize = 14
-DragArea.Parent = DragUI
+-- Palitan ang "Drag me" ng "HIDE MENU" button
+local hideMenuButton = Instance.new("TextButton")
+hideMenuButton.Size = UDim2.new(1, 0, 0, 30)
+hideMenuButton.Position = UDim2.new(0, 0, 0, 0)
+hideMenuButton.Text = "HIDE MENU"
+hideMenuButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+hideMenuButton.Font = Enum.Font.GothamSemibold
+hideMenuButton.TextSize = 14
+hideMenuButton.Parent = DragUI
 
+local MainFrame = Instance.new("Frame")
 MainFrame.Size = UDim2.new(1, 0, 1, -30)
 MainFrame.Position = UDim2.new(0, 0, 0, 30)
 MainFrame.BackgroundTransparency = 1
 MainFrame.Parent = DragUI
 
+local SpeedHackToggle = Instance.new("TextButton")
 SpeedHackToggle.Size = UDim2.new(1, -20, 0, 40)
 SpeedHackToggle.Position = UDim2.new(0, 10, 0, 10)
 SpeedHackToggle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
@@ -96,6 +94,7 @@ SpeedHackToggle.Font = Enum.Font.GothamSemibold
 SpeedHackToggle.TextSize = 14
 SpeedHackToggle.Parent = MainFrame
 
+local InstantPickupToggle = Instance.new("TextButton")
 InstantPickupToggle.Size = UDim2.new(1, -20, 0, 40)
 InstantPickupToggle.Position = UDim2.new(0, 10, 0, 60)
 InstantPickupToggle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
@@ -114,17 +113,21 @@ buttonCorner2.Parent = InstantPickupToggle
 
 local speedHackEnabled = false
 local instantPickupEnabled = false
-local userInputService = game:GetService("UserInputService")
+local UserInputService = game:GetService("UserInputService")
 
 -- Toggle Speed Hack
 SpeedHackToggle.MouseButton1Click:Connect(function()
     speedHackEnabled = not speedHackEnabled
     if speedHackEnabled then
         SpeedHackToggle.Text = "Speed Hack: On"
-        game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
+        if game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+            game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
+        end
     else
         SpeedHackToggle.Text = "Speed Hack: Off"
-        game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 16
+        if game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+            game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 16
+        end
     end
 end)
 
@@ -138,11 +141,21 @@ InstantPickupToggle.MouseButton1Click:Connect(function()
     end
 end)
 
--- Make the UI draggable (updated logic)
+-- Make the UI draggable
 local dragging = false
-local dragStart, startPos
+local dragInput, dragStart, startPos
 
-DragArea.InputBegan:Connect(function(input)
+-- Hindi na kailangan ang DragArea, pero kung gusto mong itago ang "Drag me" label at gawing button lang:
+-- Gamitin natin ang hideMenuButton para magtoggle ng UI visibility
+local uiVisible = true
+
+hideMenuButton.MouseButton1Click:Connect(function()
+    uiVisible = not uiVisible
+    DragUI.Visible = uiVisible
+end)
+
+-- Optional: Pwede mo rin gawing draggable ang UI kung gusto mo
+DragUI.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         dragging = true
         dragStart = input.Position
@@ -155,15 +168,8 @@ DragArea.InputBegan:Connect(function(input)
     end
 end)
 
-DragArea.InputChanged:Connect(function(input)
+DragUI.InputChanged:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
-        local delta = input.Position - dragStart
-        DragUI.Position = startPos + UDim2.new(0, delta.X, 0, delta.Y)
-    end
-end)
-
-game:GetService("UserInputService").InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
         local delta = input.Position - dragStart
         DragUI.Position = startPos + UDim2.new(0, delta.X, 0, delta.Y)
     end
@@ -172,7 +178,6 @@ end)
 -- Constantly check for instant pickup toggle
 game:GetService("RunService").RenderStepped:Connect(function()
     if instantPickupEnabled then
-        -- Trigger the instant pickup for "CarryAreaEgg"
         for _, prompt in pairs(utility.ProximityPromptService:GetPromptInstances()) do
             if tostring(prompt) == "CarryAreaEgg" then
                 prompt.HoldDuration = 0
