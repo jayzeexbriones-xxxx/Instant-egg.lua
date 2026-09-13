@@ -65,7 +65,7 @@ ScreenGui.Parent = player:WaitForChild("PlayerGui")
 
 local toggleButton = Instance.new("TextButton")
 toggleButton.Size = UDim2.new(0, 200, 0, 50)
-toggleButton.Position = UDim2.new(0.5, -100, 0.01, 0)
+toggleButton.Position = UDim2.new(0.5, -100, 0.005, 0)
 toggleButton.Text = "Enable Instant Pickup"
 toggleButton.Parent = ScreenGui
 
