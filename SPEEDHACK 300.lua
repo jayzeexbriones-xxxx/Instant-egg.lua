@@ -73,10 +73,15 @@ local instantPickupEnabled = false
 local connection = nil
 
 -- Drag Functionality
-local dragging = false
-local dragStart, startPos
-
 local function enableDrag(button)
+    -- Siguraduhing naka-active at draggable ang button
+    button.Active = true
+    button.Draggable = true
+
+    local dragging = false
+    local dragStart
+    local startPos
+
     button.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = true
@@ -105,7 +110,7 @@ local function enableDrag(button)
     end)
 end
 
--- Activate dragging on toggleButton
+-- Enable drag on toggleButton
 enableDrag(toggleButton)
 
 -- Toggle Button Functionality
