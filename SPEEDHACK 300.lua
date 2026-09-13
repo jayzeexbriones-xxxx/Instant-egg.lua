@@ -68,15 +68,15 @@ UICorner.CornerRadius = UDim.new(0, 8)
 UICorner.Parent = DragUI
 DragUI.Parent = ScreenGui
 
--- Replace ang "Drag me" label with "HIDE MENU" button
-local hideButton = Instance.new("TextButton")
-hideButton.Size = UDim2.new(1, 0, 0, 30)
-hideButton.Position = UDim2.new(0, 0, 0, 0)
-hideButton.Text = "HIDE MENU"
-hideButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-hideButton.Font = Enum.Font.GothamSemibold
-hideButton.TextSize = 14
-hideButton.Parent = DragUI
+-- Palitan ang "Drag me" ng "HIDE MENU" button
+local hideMenuButton = Instance.new("TextButton")
+hideMenuButton.Size = UDim2.new(1, 0, 0, 30)
+hideMenuButton.Position = UDim2.new(0, 0, 0, 0)
+hideMenuButton.Text = "HIDE MENU"
+hideMenuButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+hideMenuButton.Font = Enum.Font.GothamSemibold
+hideMenuButton.TextSize = 14
+hideMenuButton.Parent = DragUI
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Size = UDim2.new(1, 0, 1, -30)
@@ -141,23 +141,27 @@ InstantPickupToggle.MouseButton1Click:Connect(function()
     end
 end)
 
--- Gamitin ang toggle para i-hide o show ang UI
+-- Make the UI toggle visibility
 local uiVisible = true
-
-hideButton.MouseButton1Click:Connect(function()
+local function toggleUI()
     uiVisible = not uiVisible
     DragUI.Visible = uiVisible
+end
+
+-- Button to hide/show
+hideMenuButton.MouseButton1Click:Connect(function()
+    toggleUI()
 end)
 
--- Optional: pwede mo pa rin gawing draggable ang UI
+-- Draggable functionality
 local dragging = false
-local dragStart, startPos
+local dragInput, dragStart, startPos
 
-DragUI.InputBegan:Connect(function(input)
+MainFrame.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         dragging = true
         dragStart = input.Position
-        startPos = DragUI.Position
+        startPos = MainFrame.Position
         input.Changed:Connect(function()
             if input.UserInputState == Enum.UserInputState.End then
                 dragging = false
@@ -166,14 +170,14 @@ DragUI.InputBegan:Connect(function(input)
     end
 end)
 
-DragUI.InputChanged:Connect(function(input)
+MainFrame.InputChanged:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
         local delta = input.Position - dragStart
-        DragUI.Position = startPos + UDim2.new(0, delta.X, 0, delta.Y)
+        MainFrame.Position = startPos + UDim2.new(0, delta.X, 0, delta.Y)
     end
 end)
 
--- Constantly check for instant pickup toggle
+-- Continuous check for instant pickup
 game:GetService("RunService").RenderStepped:Connect(function()
     if instantPickupEnabled then
         for _, prompt in pairs(utility.ProximityPromptService:GetPromptInstances()) do
