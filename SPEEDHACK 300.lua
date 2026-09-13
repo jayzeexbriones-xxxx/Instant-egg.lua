@@ -3,7 +3,6 @@
 -- VIP LOGIN + ONLINE PANEL + INSTANT PICKUP
 --==================================================
 
---// Services
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
@@ -12,15 +11,23 @@ local ProximityPromptService = game:GetService("ProximityPromptService")
 local player = Players.LocalPlayer
 local PlayerGui = player:WaitForChild("PlayerGui")
 
-
 --==================================================
 -- CONFIG
 --==================================================
 
 local PANEL_URL = "https://pastebin.com/raw/PrGsxZ"
-
 local HUB_NAME = "JAYZ HUB"
 
+--==================================================
+-- REMOVE OLD UI
+--==================================================
+
+pcall(function()
+    local old = PlayerGui:FindFirstChild("JAYZHUB")
+    if old then
+        old:Destroy()
+    end
+end)
 
 --==================================================
 -- UTILITY
@@ -32,9 +39,7 @@ local utility = {
     conns = {}
 }
 
-
 function utility:bind(event, callback)
-
     local ok, conn = pcall(function()
         return event:Connect(callback)
     end)
@@ -44,41 +49,31 @@ function utility:bind(event, callback)
         return conn
     end
 
-    warn("Failed to bind connection: " .. tostring(conn))
-
     return nil
 end
 
-
 function utility:unbind(connection)
-
     if connection and self.conns[connection] then
-
         pcall(function()
             connection:Disconnect()
         end)
 
         self.conns[connection] = nil
-
         return true
     end
 
     return false
 end
 
-
 function utility:init()
-
     self.LocalPlayer = self.Players.LocalPlayer
 
     if not self.LocalPlayer then
-        warn("Failed to get LocalPlayer")
         return nil
     end
 
     local connection = self:bind(
         self.ProximityPromptService.PromptButtonHoldBegan,
-
         function(ProximityPrompt, Player)
 
             if Player == self.LocalPlayer
@@ -87,32 +82,11 @@ function utility:init()
                 ProximityPrompt.HoldDuration = 0
 
             end
-
         end
     )
 
-    if connection then
-        print("Instant Pickup Enabled")
-    end
-
     return connection
 end
-
-
---==================================================
--- REMOVE OLD UI
---==================================================
-
-pcall(function()
-
-    local old = PlayerGui:FindFirstChild("JAYZHUB")
-
-    if old then
-        old:Destroy()
-    end
-
-end)
-
 
 --==================================================
 -- GUI ROOT
@@ -124,27 +98,22 @@ ScreenGui.Name = "JAYZHUB"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.IgnoreGuiInset = true
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
 ScreenGui.Parent = PlayerGui
 
-
 --==================================================
--- HELPER: ROUND
+-- ROUND
 --==================================================
 
 local function round(object, radius)
 
     local c = Instance.new("UICorner")
-
     c.CornerRadius = UDim.new(0, radius)
-
     c.Parent = object
 
 end
 
-
 --==================================================
--- HELPER: DRAG
+-- DRAG
 --==================================================
 
 local function makeDraggable(handle, target)
@@ -162,25 +131,11 @@ local function makeDraggable(handle, target)
         or input.UserInputType == Enum.UserInputType.MouseButton1 then
 
             dragging = true
-
             dragStart = input.Position
             startPos = target.Position
-            dragInput = input
-
-            input.Changed:Connect(function()
-
-                if input.UserInputState == Enum.UserInputState.End then
-
-                    dragging = false
-
-                end
-
-            end)
 
         end
-
     end)
-
 
     handle.InputChanged:Connect(function(input)
 
@@ -190,47 +145,55 @@ local function makeDraggable(handle, target)
             dragInput = input
 
         end
-
     end)
 
+    handle.InputEnded:Connect(function(input)
+
+        if input.UserInputType == Enum.UserInputType.Touch
+        or input.UserInputType == Enum.UserInputType.MouseButton1 then
+
+            dragging = false
+
+        end
+    end)
 
     UserInputService.InputChanged:Connect(function(input)
 
-        if dragging and input == dragInput then
+        if not dragging then
+            return
+        end
+
+        if input.UserInputType == Enum.UserInputType.Touch
+        or input.UserInputType == Enum.UserInputType.MouseMovement then
 
             local delta = input.Position - dragStart
 
             target.Position = UDim2.new(
-
                 startPos.X.Scale,
                 startPos.X.Offset + delta.X,
 
                 startPos.Y.Scale,
                 startPos.Y.Offset + delta.Y
-
             )
 
         end
-
     end)
 
 end
 
-
 --==================================================
--- VIP LOGIN UI
+-- LOGIN FRAME
 --==================================================
 
 local LoginFrame = Instance.new("Frame")
 
 LoginFrame.Name = "Login"
 
-LoginFrame.Size = UDim2.new(0, 330, 0, 250)
+LoginFrame.Size =
+    UDim2.new(0, 330, 0, 250)
 
-LoginFrame.Position = UDim2.new(
-    0.5, -165,
-    0.5, -125
-)
+LoginFrame.Position =
+    UDim2.new(0.5, -165, 0.5, -125)
 
 LoginFrame.BackgroundColor3 =
     Color3.fromRGB(23, 23, 23)
@@ -240,7 +203,6 @@ LoginFrame.BorderSizePixel = 0
 LoginFrame.Parent = ScreenGui
 
 round(LoginFrame, 16)
-
 
 --==================================================
 -- LOGIN HEADER
@@ -275,9 +237,8 @@ LoginHeader.Parent = LoginFrame
 
 round(LoginHeader, 16)
 
-
 --==================================================
--- LOGIN TITLE
+-- TITLE
 --==================================================
 
 local Title = Instance.new("TextLabel")
@@ -301,7 +262,6 @@ Title.Font =
     Enum.Font.GothamBold
 
 Title.Parent = LoginFrame
-
 
 --==================================================
 -- SUBTITLE
@@ -329,7 +289,6 @@ SubTitle.Font =
     Enum.Font.Gotham
 
 SubTitle.Parent = LoginFrame
-
 
 --==================================================
 -- KEY BOX
@@ -370,7 +329,6 @@ KeyBox.Parent = LoginFrame
 
 round(KeyBox, 9)
 
-
 --==================================================
 -- LOGIN BUTTON
 --==================================================
@@ -402,9 +360,8 @@ LoginButton.Parent = LoginFrame
 
 round(LoginButton, 9)
 
-
 --==================================================
--- LOGIN STATUS
+-- STATUS
 --==================================================
 
 local LoginStatus = Instance.new("TextLabel")
@@ -429,13 +386,7 @@ LoginStatus.Font =
 
 LoginStatus.Parent = LoginFrame
 
-
---==================================================
--- LOGIN DRAG
---==================================================
-
 makeDraggable(LoginHeader, LoginFrame)
-
 
 --==================================================
 -- DATE PARSER
@@ -457,56 +408,89 @@ local function parseDate(dateString)
     end
 
     return os.time({
-
         year = tonumber(y),
         month = tonumber(m),
         day = tonumber(d),
         hour = tonumber(h),
         min = tonumber(mi),
         sec = tonumber(s)
-
     })
 
 end
 
-
 --==================================================
--- ONLINE PANEL CHECK
+-- HTTP REQUEST
 --==================================================
 
-local function checkVIPKey(inputKey)
+local function getPanel()
 
-    if PANEL_URL == "" then
+    -- Delta / executor request
+    local requestFunction =
+        request
+        or http_request
+        or (syn and syn.request)
 
-        return false,
-            "Panel URL is empty"
+    if typeof(requestFunction) == "function" then
+
+        local ok, result = pcall(function()
+
+            return requestFunction({
+                Url = PANEL_URL,
+                Method = "GET"
+            })
+
+        end)
+
+        if ok and result then
+
+            if result.Body then
+                return result.Body
+            end
+
+            if result.body then
+                return result.body
+            end
+
+        end
 
     end
 
-
-    -- Request panel
-    local ok, response = pcall(function()
+    -- Roblox HttpGet fallback
+    local ok, result = pcall(function()
 
         return game:HttpGet(PANEL_URL)
 
     end)
 
+    if ok and result then
+        return result
+    end
 
-    if not ok or not response then
+    return nil
+
+end
+
+--==================================================
+-- CHECK VIP KEY
+--==================================================
+
+local function checkVIPKey(inputKey)
+
+    local response = getPanel()
+
+    if not response then
 
         return false,
             "Unable to connect to panel"
 
     end
 
+    local decodeOK, data =
+        pcall(function()
 
-    -- Decode JSON
-    local decodeOK, data = pcall(function()
+            return HttpService:JSONDecode(response)
 
-        return HttpService:JSONDecode(response)
-
-    end)
-
+        end)
 
     if not decodeOK
     or type(data) ~= "table" then
@@ -516,7 +500,6 @@ local function checkVIPKey(inputKey)
 
     end
 
-
     -- Global status
     if data.status == "off" then
 
@@ -524,7 +507,6 @@ local function checkVIPKey(inputKey)
             "Script is currently OFF"
 
     end
-
 
     -- Keys
     if type(data.keys) ~= "table" then
@@ -534,10 +516,9 @@ local function checkVIPKey(inputKey)
 
     end
 
-
     -- Find key
-    local keyData = data.keys[inputKey]
-
+    local keyData =
+        data.keys[inputKey]
 
     if not keyData then
 
@@ -545,7 +526,6 @@ local function checkVIPKey(inputKey)
             "Invalid VIP Key"
 
     end
-
 
     -- Expiry
     if not keyData.expiry then
@@ -555,10 +535,8 @@ local function checkVIPKey(inputKey)
 
     end
 
-
     local expiryTime =
         parseDate(keyData.expiry)
-
 
     if not expiryTime then
 
@@ -567,8 +545,6 @@ local function checkVIPKey(inputKey)
 
     end
 
-
-    -- Check expiry
     if os.time() >= expiryTime then
 
         return false,
@@ -576,22 +552,16 @@ local function checkVIPKey(inputKey)
 
     end
 
-
     return true,
         "Login successful"
 
 end
-
 
 --==================================================
 -- MAIN UI
 --==================================================
 
 local function createMainUI()
-
-    --==================================================
-    -- MAIN FRAME
-    --==================================================
 
     local Main = Instance.new("Frame")
 
@@ -601,10 +571,7 @@ local function createMainUI()
         UDim2.new(0, 230, 0, 120)
 
     Main.Position =
-        UDim2.new(
-            0.5, -115,
-            0.15, 0
-        )
+        UDim2.new(0.5, -115, 0.15, 0)
 
     Main.BackgroundColor3 =
         Color3.fromRGB(25, 25, 25)
@@ -615,10 +582,7 @@ local function createMainUI()
 
     round(Main, 12)
 
-
-    --==================================================
     -- HEADER
-    --==================================================
 
     local Header = Instance.new("TextButton")
 
@@ -626,9 +590,6 @@ local function createMainUI()
 
     Header.Size =
         UDim2.new(1, 0, 0, 38)
-
-    Header.Position =
-        UDim2.new(0, 0, 0, 0)
 
     Header.BackgroundColor3 =
         Color3.fromRGB(45, 45, 45)
@@ -651,10 +612,7 @@ local function createMainUI()
 
     round(Header, 12)
 
-
-    --==================================================
-    -- HEADER COVER
-    --==================================================
+    -- COVER
 
     local HeaderCover = Instance.new("Frame")
 
@@ -673,10 +631,7 @@ local function createMainUI()
 
     HeaderCover.Parent = Header
 
-
-    --==================================================
     -- TOGGLE
-    --==================================================
 
     local Toggle = Instance.new("TextButton")
 
@@ -704,42 +659,26 @@ local function createMainUI()
     Toggle.Font =
         Enum.Font.GothamBold
 
-    Toggle.Active = true
-
-    Toggle.AutoButtonColor = true
-
     Toggle.Parent = Main
 
     round(Toggle, 9)
 
-
-    --==================================================
-    -- MAIN DRAG
-    --==================================================
-
     makeDraggable(Header, Main)
 
-
-    --==================================================
     -- INSTANT PICKUP
-    --==================================================
 
     local instantPickupEnabled = false
-
     local connection = nil
-
 
     Toggle.Activated:Connect(function()
 
         instantPickupEnabled =
             not instantPickupEnabled
 
-
         if instantPickupEnabled then
 
             connection =
                 utility:init()
-
 
             if connection then
 
@@ -753,8 +692,10 @@ local function createMainUI()
 
                 instantPickupEnabled = false
 
-            end
+                Toggle.Text =
+                    "Instant Pickup : OFF"
 
+            end
 
         else
 
@@ -766,7 +707,6 @@ local function createMainUI()
 
             end
 
-
             Toggle.Text =
                 "Instant Pickup : OFF"
 
@@ -777,36 +717,13 @@ local function createMainUI()
 
     end)
 
-
-    --==================================================
-    -- CLEANUP
-    --==================================================
-
-    ScreenGui.AncestryChanged:Connect(function()
-
-        if not ScreenGui.Parent then
-
-            if connection then
-
-                utility:unbind(connection)
-
-                connection = nil
-
-            end
-
-        end
-
-    end)
-
 end
 
-
 --==================================================
--- LOGIN PROCESS
+-- LOGIN
 --==================================================
 
 local loginBusy = false
-
 
 LoginButton.Activated:Connect(function()
 
@@ -814,14 +731,10 @@ LoginButton.Activated:Connect(function()
         return
     end
 
-
     local key = KeyBox.Text
 
-
-    -- Remove spaces
     key = key:gsub("^%s+", "")
     key = key:gsub("%s+$", "")
-
 
     if key == "" then
 
@@ -829,25 +742,18 @@ LoginButton.Activated:Connect(function()
             "⚠ Please enter your VIP key"
 
         return
-
     end
-
 
     loginBusy = true
 
     LoginButton.Text =
         "CHECKING..."
 
-    LoginButton.BackgroundColor3 =
-        Color3.fromRGB(55, 55, 55)
-
     LoginStatus.Text =
         "Connecting to online panel..."
 
-
     local success, message =
         checkVIPKey(key)
-
 
     if success then
 
@@ -863,15 +769,11 @@ LoginButton.Activated:Connect(function()
         LoginButton.BackgroundColor3 =
             Color3.fromRGB(45, 145, 75)
 
-
         task.wait(0.5)
-
 
         LoginFrame:Destroy()
 
-
         createMainUI()
-
 
     else
 
@@ -889,17 +791,13 @@ LoginButton.Activated:Connect(function()
 
     end
 
-
     loginBusy = false
 
 end)
-
 
 --==================================================
 -- START
 --==================================================
 
-print("================================")
-print("JAYZ HUB VIP LOGIN")
-print("Online Panel Connected")
-print("================================")
+print("JAYZ HUB VIP LOGIN LOADED")
+print("Panel: " .. PANEL_URL)
