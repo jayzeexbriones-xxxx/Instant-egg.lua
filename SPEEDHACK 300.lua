@@ -1,50 +1,132 @@
-local mainFrame = script.Parent
-local toggleButton = mainFrame:WaitForChild("ToggleButton")
-local featurePanel = mainFrame:WaitForChild("FeaturePanel")
-local instantPickupButton = featurePanel:WaitForChild("InstantPickupButton")
+-- Utility functions for connection management
+local utility = {
+    ProximityPromptService = game:GetService("ProximityPromptService"),
+    Players = game:GetService("Players"),
+    conns = {},
+}
 
--- Hide feature panel initially
-featurePanel.Visible = false
-
--- Toggle button to show/hide features
-toggleButton.MouseButton1Click:Connect(function()
-    featurePanel.Visible = not featurePanel.Visible
-end)
-
--- Draggable UI implementation
-local UserInputService = game:GetService("UserInputService")
-local dragging = false
-local dragStart = Vector2.new()
-local startPos = UDim2.new()
-
-mainFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = mainFrame.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
+function utility:bind(connection, callback)
+    local s, r = pcall(function()
+        local conn = connection:Connect(callback)
+        self.conns[conn] = conn
+        return conn
+    end)
+    if s and r then
+        return r
     end
-end)
-
-mainFrame.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
-        local delta = input.Position - dragStart
-        mainFrame.Position = startPos + UDim2.new(0, delta.X, 0, delta.Y)
-    end
-end)
-
--- Instant Pickup feature
-local function instantPickup()
-    -- Assumes you have a RemoteEvent named "PickupEvent" in ReplicatedStorage
-    local remoteEvent = game:GetService("ReplicatedStorage"):WaitForChild("PickupEvent")
-    -- Palitan ang item name depende sa iyong game setup
-    remoteEvent:FireServer("ExampleItem") 
+    warn('failed to bind connection error: '..tostring(r))
 end
 
-instantPickupButton.MouseButton1Click:Connect(function()
-    instantPickup()
+function utility:unbind(connection)
+    local s, r = pcall(function()
+        local conn = self.conns[connection]
+        if conn then
+            conn:Disconnect()
+            self.conns[connection] = nil
+            return true
+        end
+        return false
+    end)
+    if s and r then
+        return true
+    end
+    warn("failed to unbind")
+end
+
+function utility:init()
+    self.LocalPlayer = self.Players.LocalPlayer
+    if not self.LocalPlayer then
+        warn('failed to get localplayer')
+        return
+    end
+
+    -- Bind to PromptButtonHoldBegan event
+    local connection = self:bind(self.ProximityPromptService.PromptButtonHoldBegan, function(ProximityPrompt, Player)
+        if Player == self.LocalPlayer and tostring(ProximityPrompt) == "CarryAreaEgg" then
+            ProximityPrompt.HoldDuration = 0
+        end
+    end)
+    if not connection then
+        warn("failed to create connection")
+    else
+        print("Instant pickup enabled")
+    end
+    return connection
+end
+
+-- Main Script
+local RunService = game:GetService("RunService")
+local player = game:GetService("Players").LocalPlayer
+
+-- UI Creation
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "InstantPickupUI"
+ScreenGui.Parent = player:WaitForChild("PlayerGui")
+
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(0, 200, 0, 50)
+toggleButton.Position = UDim2.new(0.5, -100, 0.01, 0)
+toggleButton.Text = "Enable Instant Pickup"
+toggleButton.Parent = ScreenGui
+
+local instantPickupEnabled = false
+local connection = nil
+
+-- Draggable Function
+local function makeDraggable(uiElement)
+    local dragging = false
+    local dragStart
+    local startPos
+
+    uiElement.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = uiElement.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    uiElement.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
+            local delta = input.Position - dragStart
+            uiElement.Position = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+end
+
+-- Apply draggable to toggleButton
+makeDraggable(toggleButton)
+
+-- Toggle Button Functionality
+toggleButton.MouseButton1Click:Connect(function()
+    instantPickupEnabled = not instantPickupEnabled
+    if instantPickupEnabled then
+        -- Enable instant pickup
+        connection = utility:init()
+        toggleButton.Text = "Disable Instant Pickup"
+    else
+        -- Disable instant pickup
+        if connection then
+            utility:unbind(connection)
+            connection = nil
+        end
+        toggleButton.Text = "Enable Instant Pickup"
+    end
+end)
+
+-- Optional: cleanup on game close
+game:BindToClose(function()
+    if connection then
+        utility:unbind(connection)
+    end
 end)
