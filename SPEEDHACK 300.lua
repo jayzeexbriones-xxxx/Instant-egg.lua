@@ -1,4 +1,4 @@
---// Utility Functions
+--// Utility
 local utility = {
     ProximityPromptService = game:GetService("ProximityPromptService"),
     Players = game:GetService("Players"),
@@ -6,44 +6,36 @@ local utility = {
 }
 
 function utility:bind(connection, callback)
-    local s, r = pcall(function()
-        local conn = connection:Connect(callback)
-        self.conns[conn] = conn
-        return conn
+    local ok, conn = pcall(function()
+        return connection:Connect(callback)
     end)
 
-    if s and r then
-        return r
+    if ok and conn then
+        self.conns[conn] = conn
+        return conn
     end
 
-    warn("failed to bind connection error: " .. tostring(r))
+    warn("Failed to bind connection: " .. tostring(conn))
 end
 
 function utility:unbind(connection)
-    local s, r = pcall(function()
-        local conn = self.conns[connection]
+    if connection and self.conns[connection] then
+        pcall(function()
+            connection:Disconnect()
+        end)
 
-        if conn then
-            conn:Disconnect()
-            self.conns[connection] = nil
-            return true
-        end
-
-        return false
-    end)
-
-    if s and r then
+        self.conns[connection] = nil
         return true
     end
 
-    warn("failed to unbind")
+    return false
 end
 
 function utility:init()
     self.LocalPlayer = self.Players.LocalPlayer
 
     if not self.LocalPlayer then
-        warn("failed to get localplayer")
+        warn("Failed to get LocalPlayer")
         return
     end
 
@@ -59,9 +51,7 @@ function utility:init()
         end
     )
 
-    if not connection then
-        warn("failed to create connection")
-    else
+    if connection then
         print("Instant pickup enabled")
     end
 
@@ -69,7 +59,7 @@ function utility:init()
 end
 
 
---// Main
+--// Services
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 
@@ -81,51 +71,128 @@ local PlayerGui = player:WaitForChild("PlayerGui")
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "InstantPickupUI"
 ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = PlayerGui
 
 
+--// Main Frame
+local Main = Instance.new("Frame")
+Main.Name = "Main"
+Main.Size = UDim2.new(0, 230, 0, 120)
+Main.Position = UDim2.new(0.5, -115, 0.15, 0)
+
+Main.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+Main.BorderSizePixel = 0
+
+Main.Parent = ScreenGui
+
+
+--// Rounded Main
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 12)
+MainCorner.Parent = Main
+
+
+--// Drag Header
+local Header = Instance.new("TextButton")
+Header.Name = "DragHeader"
+
+Header.Size = UDim2.new(1, 0, 0, 38)
+Header.Position = UDim2.new(0, 0, 0, 0)
+
+Header.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+Header.BorderSizePixel = 0
+
+Header.Text = "☰  INSTANT PICKUP"
+Header.TextColor3 = Color3.fromRGB(255, 255, 255)
+Header.TextSize = 14
+Header.Font = Enum.Font.GothamBold
+
+Header.AutoButtonColor = false
+Header.Active = true
+
+Header.Parent = Main
+
+
+--// Header Corners
+local HeaderCorner = Instance.new("UICorner")
+HeaderCorner.CornerRadius = UDim.new(0, 12)
+HeaderCorner.Parent = Header
+
+
+--// Bottom cover para squared ang lower header
+local HeaderCover = Instance.new("Frame")
+HeaderCover.Size = UDim2.new(1, 0, 0, 12)
+HeaderCover.Position = UDim2.new(0, 0, 1, -12)
+
+HeaderCover.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+HeaderCover.BorderSizePixel = 0
+
+HeaderCover.Parent = Header
+
+
 --// Toggle Button
-local toggleButton = Instance.new("TextButton")
-toggleButton.Name = "InstantPickupButton"
-toggleButton.Size = UDim2.new(0, 220, 0, 55)
-toggleButton.Position = UDim2.new(0.5, -110, 0.08, 0)
+local Toggle = Instance.new("TextButton")
+Toggle.Name = "Toggle"
 
-toggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-toggleButton.BorderSizePixel = 0
+Toggle.Size = UDim2.new(1, -20, 0, 55)
+Toggle.Position = UDim2.new(0, 10, 0, 50)
 
-toggleButton.Text = "Enable Instant Pickup"
-toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-toggleButton.TextSize = 16
-toggleButton.Font = Enum.Font.GothamBold
+Toggle.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+Toggle.BorderSizePixel = 0
 
-toggleButton.AutoButtonColor = true
-toggleButton.Active = true
+Toggle.Text = "Enable Instant Pickup"
+Toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+Toggle.TextSize = 14
+Toggle.Font = Enum.Font.GothamBold
 
-toggleButton.Parent = ScreenGui
+Toggle.Active = true
+Toggle.AutoButtonColor = true
 
-
---// Rounded Corners
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 10)
-corner.Parent = toggleButton
+Toggle.Parent = Main
 
 
---// Drag System
+--// Toggle Corner
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(0, 9)
+ToggleCorner.Parent = Toggle
+
+
+--//==================================================
+--// DRAG SYSTEM
+--//==================================================
+
 local dragging = false
-local dragStart
-local startPos
-local dragInput
+local dragStart = nil
+local startPosition = nil
 
-toggleButton.InputBegan:Connect(function(input)
+local function updateDrag(input)
 
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-    or input.UserInputType == Enum.UserInputType.Touch then
+    if not dragging then
+        return
+    end
+
+    local delta = input.Position - dragStart
+
+    Main.Position = UDim2.new(
+        startPosition.X.Scale,
+        startPosition.X.Offset + delta.X,
+
+        startPosition.Y.Scale,
+        startPosition.Y.Offset + delta.Y
+    )
+end
+
+
+Header.InputBegan:Connect(function(input)
+
+    if input.UserInputType == Enum.UserInputType.Touch
+    or input.UserInputType == Enum.UserInputType.MouseButton1 then
 
         dragging = true
         dragStart = input.Position
-        startPos = toggleButton.Position
-        dragInput = input
+        startPosition = Main.Position
 
         input.Changed:Connect(function()
 
@@ -138,64 +205,66 @@ toggleButton.InputBegan:Connect(function(input)
 end)
 
 
-toggleButton.InputChanged:Connect(function(input)
+Header.InputChanged:Connect(function(input)
 
     if input.UserInputType == Enum.UserInputType.MouseMovement
     or input.UserInputType == Enum.UserInputType.Touch then
 
-        dragInput = input
+        if dragging then
+            updateDrag(input)
+        end
     end
 end)
 
 
 UserInputService.InputChanged:Connect(function(input)
 
-    if input == dragInput and dragging then
+    if dragging then
 
-        local delta = input.Position - dragStart
+        if input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch then
 
-        toggleButton.Position = UDim2.new(
-            startPos.X.Scale,
-            startPos.X.Offset + delta.X,
-
-            startPos.Y.Scale,
-            startPos.Y.Offset + delta.Y
-        )
+            updateDrag(input)
+        end
     end
 end)
 
 
---// Toggle Function
+--//==================================================
+--// INSTANT PICKUP TOGGLE
+--//==================================================
+
 local instantPickupEnabled = false
 local connection = nil
 
-toggleButton.Activated:Connect(function()
+Toggle.Activated:Connect(function()
 
     instantPickupEnabled = not instantPickupEnabled
 
     if instantPickupEnabled then
 
-        -- Enable
         connection = utility:init()
 
-        toggleButton.Text = "Disable Instant Pickup"
-        toggleButton.BackgroundColor3 = Color3.fromRGB(45, 150, 75)
+        Toggle.Text = "✓ Instant Pickup : ON"
+        Toggle.BackgroundColor3 = Color3.fromRGB(45, 145, 75)
 
     else
 
-        -- Disable
         if connection then
             utility:unbind(connection)
             connection = nil
         end
 
-        toggleButton.Text = "Enable Instant Pickup"
-        toggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+        Toggle.Text = "Instant Pickup : OFF"
+        Toggle.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
     end
 end)
 
 
---// Cleanup
+--//==================================================
+--// CLEANUP
+--//==================================================
+
 game:BindToClose(function()
 
     if connection then
