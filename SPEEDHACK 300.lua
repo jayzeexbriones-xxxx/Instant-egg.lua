@@ -74,43 +74,41 @@ local connection = nil
 
 -- Drag Functionality
 local function enableDrag(button)
-    -- Siguraduhing naka-active at draggable ang button
-    button.Active = true
-    button.Draggable = true
-
     local dragging = false
     local dragStart
     local startPos
 
+    -- Kapag nagsimula ang drag
     button.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = true
             dragStart = input.Position
             startPos = button.Position
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
         end
     end)
 
+    -- Habang nagdadrag
     button.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement then
-            if dragging then
-                local delta = input.Position - dragStart
-                button.Position = UDim2.new(
-                    startPos.X.Scale,
-                    startPos.X.Offset + delta.X,
-                    startPos.Y.Scale,
-                    startPos.Y.Offset + delta.Y
-                )
-            end
+        if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
+            local delta = input.Position - dragStart
+            button.Position = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+
+    -- Kapag natapos ang drag
+    button.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
         end
     end)
 end
 
--- Enable drag on toggleButton
+-- Tawagin ang enableDrag function para maging draggable ang toggleButton
 enableDrag(toggleButton)
 
 -- Toggle Button Functionality
