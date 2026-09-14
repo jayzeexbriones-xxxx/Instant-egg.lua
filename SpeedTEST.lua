@@ -23,6 +23,7 @@ local utility = {
 -- ============================================
 getgenv().config = {
     speedValue = 260,
+    autoPickupRadius = 30,   -- 🎯 Radius para sa auto pickup (taasan kung kulang)
 }
 
 -- ============================================
@@ -53,7 +54,7 @@ function utility:unbind(connection)
 end
 
 -- ============================================
--- STEP 5: INSTANT PICKUP
+-- STEP 5: INSTANT PICKUP (HoldDuration = 0)
 -- ============================================
 function utility:startInstantPickup()
     self.LocalPlayer = self.Players.LocalPlayer
@@ -112,7 +113,7 @@ function utility:startAntiRagdoll()
         end
     end
 
-    -- 🔧 Start recovery loop
+    -- 🔧 Recovery loop
     utility.antiRagdollConn = self.RunService.Heartbeat:Connect(function()
         if not utility.antiRagdollEnabled then return end
 
@@ -153,83 +154,79 @@ function utility:stopAntiRagdoll()
 end
 
 -- ============================================
--- STEP 7: ANTI-DROP + AUTO-REGAB
+-- STEP 7: AUTO PICKUP DROPPED EGG
 -- ============================================
-utility.antiDropEnabled = false
-utility.antiDropConn = nil
-utility.lastEggName = nil
-utility.lastEggPos = nil
+utility.autoPickupEnabled = false
+utility.autoPickupConn = nil
 
-function utility:startAntiDrop()
+function utility:startAutoPickup()
     self.LocalPlayer = self.Players.LocalPlayer
     if not self.LocalPlayer then return false, "No LocalPlayer" end
+    if not fireproximityprompt then return false, "Missing fireproximityprompt" end
 
-    utility.antiDropConn = self.RunService.Heartbeat:Connect(function()
-        if not utility.antiDropEnabled then return end
+    utility.autoPickupConn = self.RunService.Heartbeat:Connect(function()
+        if not utility.autoPickupEnabled then return end
 
         local char = self.LocalPlayer.Character
         if not char then return end
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if not hum then return end
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
 
-        -- 🎯 Check kung may dala kang egg
-        local heldEgg = nil
+        -- ❌ Kung may dala ka na → skip
+        local hasEgg = false
         for _, obj in next, char:GetChildren() do
             if obj.Name:lower():find("egg") then
-                heldEgg = obj
+                hasEgg = true
                 break
             end
         end
 
-        if heldEgg then
-            -- 💾 Save yung egg info
-            utility.lastEggName = heldEgg.Name
-            utility.lastEggPos = hrp.Position
+        if hasEgg then return end
 
-            -- 🛡️ Check kung nag-ra-ragdoll
-            local isRagdolled = hum:GetState() == Enum.HumanoidStateType.Physics or
-                               hum:GetState() == Enum.HumanoidStateType.Ragdoll or
-                               hum.PlatformStand == true
+        -- 🔍 Hanapin pinakamalapit na dropped egg
+        local myPos = hrp.Position
+        local closestPrompt = nil
+        local closestDist = getgenv().config.autoPickupRadius
 
-            if isRagdolled then
-                pcall(function()
-                    hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-                    hum.PlatformStand = false
-                end)
-            end
-        else
-            -- 🥚 Wala nang egg — baka na-drop!
-            if utility.lastEggName and utility.lastEggPos then
-                for _, obj in next, self.Workspace:GetDescendants() do
-                    if obj.Name == utility.lastEggName and obj:IsA("BasePart") then
-                        local dist = (obj.Position - utility.lastEggPos).Magnitude
-                        if dist < 30 then
-                            -- 🎯 Auto-regrab!
-                            local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt")
-                            if not prompt and obj.Parent then
-                                prompt = obj.Parent:FindFirstChildWhichIsA("ProximityPrompt")
-                            end
-                            if prompt and fireproximityprompt then
-                                pcall(function()
-                                    fireproximityprompt(prompt, 0, true)
-                                end)
-                            end
-                        end
+        for _, obj in next, self.Workspace:GetDescendants() do
+            if obj:IsA("BasePart") and obj.Name:lower():find("egg") then
+                -- Hanapin yung ProximityPrompt
+                local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt")
+                if not prompt and obj.Parent then
+                    prompt = obj.Parent:FindFirstChildWhichIsA("ProximityPrompt")
+                    if not prompt and obj.Parent.Parent then
+                        prompt = obj.Parent.Parent:FindFirstChildWhichIsA("ProximityPrompt")
+                    end
+                end
+
+                if prompt then
+                    local dist = (obj.Position - myPos).Magnitude
+                    if dist < closestDist then
+                        closestDist = dist
+                        closestPrompt = prompt
                     end
                 end
             end
+        end
+
+        -- ⚡ Auto grab
+        if closestPrompt then
+            pcall(function()
+                closestPrompt.HoldDuration = 0
+                fireproximityprompt(closestPrompt, 0, true)
+            end)
         end
     end)
 
     return true
 end
 
-function utility:stopAntiDrop()
-    if utility.antiDropConn then
-        utility.antiDropConn:Disconnect()
-        utility.antiDropConn = nil
+function utility:stopAutoPickup()
+    if utility.autoPickupConn then
+        utility.autoPickupConn:Disconnect()
+        utility.autoPickupConn = nil
     end
 end
 
@@ -353,7 +350,7 @@ local function createUI()
     local speedToggle = makeToggle(50, "Speed Hack", "⚡")
     local pickupToggle = makeToggle(95, "Instant Pickup", "⚡")
     local ragdollToggle = makeToggle(140, "Anti-Ragdoll", "🛡️")
-    local dropToggle = makeToggle(185, "Anti-Drop", "🥚")
+    local autoPickupToggle = makeToggle(185, "Auto Pickup Egg", "🥚")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
@@ -368,7 +365,7 @@ local function createUI()
     return {
         ScreenGui = ScreenGui, Main = Main,
         speedToggle = speedToggle, pickupToggle = pickupToggle,
-        ragdollToggle = ragdollToggle, dropToggle = dropToggle,
+        ragdollToggle = ragdollToggle, autoPickupToggle = autoPickupToggle,
         Status = Status, CloseBtn = CloseBtn
     }
 end
@@ -471,27 +468,27 @@ ui.ragdollToggle.btn.MouseButton1Click:Connect(function()
     end
 end)
 
--- 🥚 Anti-Drop
-utility.antiDropEnabled = false
+-- 🥚 Auto Pickup Egg (Dropped)
+utility.autoPickupEnabled = false
 
-ui.dropToggle.btn.MouseButton1Click:Connect(function()
-    utility.antiDropEnabled = not utility.antiDropEnabled
-    setToggle(ui.dropToggle, utility.antiDropEnabled)
+ui.autoPickupToggle.btn.MouseButton1Click:Connect(function()
+    utility.autoPickupEnabled = not utility.autoPickupEnabled
+    setToggle(ui.autoPickupToggle, utility.autoPickupEnabled)
     
-    if utility.antiDropEnabled then
-        local ok = utility:startAntiDrop()
+    if utility.autoPickupEnabled then
+        local ok = utility:startAutoPickup()
         if ok then
-            ui.Status.Text = "Status: 🥚 Anti-Drop ON"
+            ui.Status.Text = "Status: 🥚 Auto Pickup ON"
             ui.Status.TextColor3 = COLORS.GREEN
         else
-            ui.Status.Text = "Status: ❌ Anti-Drop failed"
+            ui.Status.Text = "Status: ❌ Auto Pickup failed"
             ui.Status.TextColor3 = COLORS.RED
-            utility.antiDropEnabled = false
-            setToggle(ui.dropToggle, false)
+            utility.autoPickupEnabled = false
+            setToggle(ui.autoPickupToggle, false)
         end
     else
-        utility:stopAntiDrop()
-        ui.Status.Text = "Status: 🥚 Anti-Drop OFF"
+        utility:stopAutoPickup()
+        ui.Status.Text = "Status: 🥚 Auto Pickup OFF"
         ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
     end
 end)
@@ -501,11 +498,11 @@ ui.CloseBtn.MouseButton1Click:Connect(function()
     utility.speedEnabled = false
     utility.pickupEnabled = false
     utility.antiRagdollEnabled = false
-    utility.antiDropEnabled = false
+    utility.autoPickupEnabled = false
     if utility.speedConn then utility.speedConn:Disconnect() end
     utility:stopInstantPickup()
     utility:stopAntiRagdoll()
-    utility:stopAntiDrop()
+    utility:stopAutoPickup()
     ui.ScreenGui:Destroy()
 end)
 
