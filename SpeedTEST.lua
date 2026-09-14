@@ -23,7 +23,7 @@ local utility = {
 -- ============================================
 getgenv().config = {
     speedValue = 260,
-    floatHeight = 1,           -- 🦘 1 stud float above ground
+    floatHeight = 3,           -- 🦘 3 studs float
 }
 
 -- ============================================
@@ -147,7 +147,7 @@ function utility:stopAntiRagdoll()
 end
 
 -- ============================================
--- STEP 7: ANTI-TRAP v3 (Steady Float - Locked)
+-- STEP 7: ANTI-TRAP v3 (Steady Float - 3 studs)
 -- ============================================
 utility.antiTrapEnabled = false
 utility.antiTrapConn = nil
@@ -190,7 +190,7 @@ function utility:startAntiTrap()
             end
         end
 
-        -- 🦘 Lock sa 1 stud above ground
+        -- 🦘 Lock sa 3 studs above ground
         if utility.groundY then
             local targetY = utility.groundY + getgenv().config.floatHeight
             local newPos = Vector3.new(hrp.Position.X, targetY, hrp.Position.Z)
@@ -349,7 +349,7 @@ local function createUI()
     local speedToggle = makeToggle(50, "Speed Hack", "⚡")
     local pickupToggle = makeToggle(95, "Instant Pickup", "⚡")
     local ragdollToggle = makeToggle(140, "Anti-Ragdoll", "🛡️")
-    local trapToggle = makeToggle(185, "Anti-Trap (Float)", "🪤")
+    local trapToggle = makeToggle(185, "Anti-Trap (3 Stud)", "🪤")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
@@ -467,7 +467,7 @@ ui.ragdollToggle.btn.MouseButton1Click:Connect(function()
     end
 end)
 
--- 🪤 Anti-Trap (Float)
+-- 🪤 Anti-Trap (3 Stud Float)
 utility.antiTrapEnabled = false
 
 ui.trapToggle.btn.MouseButton1Click:Connect(function()
@@ -477,7 +477,7 @@ ui.trapToggle.btn.MouseButton1Click:Connect(function()
     if utility.antiTrapEnabled then
         local ok = utility:startAntiTrap()
         if ok then
-            ui.Status.Text = "Status: 🪤 Anti-Trap ON (Float)"
+            ui.Status.Text = "Status: 🪤 Anti-Trap ON (3 Stud)"
             ui.Status.TextColor3 = COLORS.GREEN
         else
             ui.Status.Text = "Status: ❌ Anti-Trap failed"
