@@ -26,13 +26,14 @@ utility.areas = {
 }
 
 getgenv().config = {
-    speedValue = 280,           -- ⚡ Taasan sa 280
+    speedValue = 265,
     basePos = Vector3.new(514, 71, -368),
     chickenAreas = 3,
     minArea = 9,
     knockbackThreshold = 25,
-    teleportDelay = 0.6,        -- 🐢 Delay pagkatapos teleport
-    grabDelay = 0.5,            -- 🐢 Delay pagkatapos kunin egg
+    teleportDelay = 0.6,
+    grabDelay = 0.5,
+    peckSettleDelay = 0.25,
 }
 
 -- ============================================
@@ -149,6 +150,7 @@ function utility:hasEgg()
     return false
 end
 
+-- ⚡ VELOCITY WATCHER
 function utility:startVelocityWatcher(callback)
     local char = self.LocalPlayer.Character
     if not char then return end
@@ -205,7 +207,7 @@ function utility:initEgg()
 end
 
 -- ============================================
--- STEP 6: LENNON STYLE AUTO EGG (with delays)
+-- STEP 6: LENNON STYLE AUTO EGG (balanced)
 -- ============================================
 function utility:startEgg()
     if self.eggConn then pcall(function() task.cancel(self.eggConn) end) end
@@ -243,15 +245,15 @@ function utility:startEgg()
                         
                         local waitTime = 0
                         while waitTime < 5 and not pecked do
-                            task.wait(0.1)
-                            waitTime = waitTime + 0.1
+                            task.wait(0.05)
+                            waitTime = waitTime + 0.05
                         end
                         
                         if conn then conn:Disconnect() end
                         
-                        -- STEP 4: Pag na-tuka → best egg → kunin → base
+                        -- STEP 4: Pag na-tuka → balanced teleport
                         if pecked then
-                            task.wait(0.3)  -- 🐢 Hintayin mag-settle yung character
+                            task.wait(getgenv().config.peckSettleDelay)
                             
                             local bestEgg = self:getBestEgg()
                             if bestEgg then
@@ -272,7 +274,7 @@ function utility:startEgg()
                     end
                 end
             end)
-            task.wait(0.5)  -- 🐢 Mas mahabang delay sa cycle
+            task.wait(0.5)
         end
     end)
 end
