@@ -11,312 +11,83 @@ end)
 local utility = {
     RunService = game:GetService("RunService"),
     Players = game:GetService("Players"),
-    Workspace = game:GetService("Workspace"),
-    ReplicatedStorage = game:GetService("ReplicatedStorage"),
-    CoreGui = game:GetService("CoreGui")
+    ProximityPromptService = game:GetService("ProximityPromptService"),
+    CoreGui = game:GetService("CoreGui"),
+    conns = {},
 }
 
 -- ============================================
 -- STEP 3: CONFIG
 -- ============================================
-utility.areas = {
-    "Forest", "Lake", "Desert", "Jungle", "Snow",
-    "Volcano", "Abyss Ocean", "Prehistoric", "Cosmic",
-    "Cherry Blossom", "Titan Temple",
-}
-
 getgenv().config = {
     speedValue = 260,
-    basePos = Vector3.new(514, 71, -368),
-    chickenAreas = 3,
-    minArea = 9,
-    knockbackThreshold = 15,
-    moveSpeed = 400,
-    characterRaise = 2,
-    teleportDelay = 0.4,
-    grabDelay = 0.4,
-    peckSettleDelay = 0.15,
-    closeDistance = 15,
 }
 
 -- ============================================
--- STEP 4: EGG LOGIC
+-- STEP 4: INSTANT PICKUP LOGIC
 -- ============================================
-function utility:getChickenEgg()
+function utility:bind(connection, callback)
     local s, r = pcall(function(...)
-        local egg = nil
-        local closestDist = math.huge
-        local myPos = self.LocalPlayer.Character and self.LocalPlayer.Character.HumanoidRootPart.Position
-        if not myPos then return nil end
-        
-        for key, data in next, self.EggState.ReadFieldEggs().Records do
-            local idx = table.find(self.areas, data.AreaId)
-            if idx and idx <= getgenv().config.chickenAreas then
-                local dist = (data.BoundsCFrame.Position - myPos).Magnitude
-                if dist < closestDist then
-                    closestDist = dist
-                    egg = data
-                end
-            end
-        end
-        return egg
+        local conn = connection:Connect(callback)
+        self.conns[conn] = conn
+        return self.conns[conn]
     end)
-    if s and r then return r end
-    return nil
+    if s and r then
+        return r
+    end
+    return warn('failed to bind connection error: '..tostring(r))
 end
 
-function utility:getBestEgg()
+function utility:unbind(connection)
     local s, r = pcall(function(...)
-        local egg = nil
-        local biggestegg = 0
-        for key, data in next, self.EggState.ReadFieldEggs().Records do
-            local idx = table.find(self.areas, data.AreaId)
-            if idx and idx > getgenv().config.minArea then
-                if data.AssetScale > biggestegg then
-                    biggestegg = data.AssetScale
-                    egg = data
-                end
-            end
-        end
-        return egg
-    end)
-    if s and r then return r end
-    return nil
-end
-
--- ⚡ TELEPORT (instant, safe sa chicken)
-function utility:TeleportTo(pos)
-    local char = self.LocalPlayer.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    pcall(function()
-        hrp.CFrame = CFrame.new(pos.BoundsCFrame.Position)
-    end)
-end
-
--- 🌊 STEADY MoveTo with smooth raise transition
-function utility:GoTo(pos, shouldRaise)
-    pcall(function(...)
-        local dist = math.huge
-        local targetPos = pos.BoundsCFrame.Position
-        local raiseAmount = shouldRaise and getgenv().config.characterRaise or 0
-        
-        repeat
-            local dt = task.wait(0.01)
-            local char = self.LocalPlayer.Character
-            if not char then break end
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            if not hrp then break end
-            
-            local start = hrp.Position
-            dist = (targetPos - start).Magnitude
-            
-            -- 🌊 SMOOTH raise transition (walang bounce)
-            local currentRaise = raiseAmount
-            if dist < getgenv().config.closeDistance then
-                local fadePercent = dist / getgenv().config.closeDistance
-                currentRaise = raiseAmount * fadePercent
-            end
-            
-            -- MoveTo (physics-based, safe)
-            local half = start + (targetPos - start).Unit * dt * getgenv().config.moveSpeed
-            half = half + Vector3.new(0, currentRaise, 0)
-            char:MoveTo(half)
-        until dist <= 3
-    end)
-end
-
-function utility:getproximitypromptforegg(egg)
-    local s, r = pcall(function(...)
-        local CarryAreaEggs = self.Workspace:QueryDescendants("#CarryAreaEgg")
-        local closetprompt = nil
-        local closetdist = math.huge
-        for key, prompt in next, CarryAreaEggs do
-            local p = prompt.Parent
-            if p then
-                local dist = (egg.BoundsCFrame.Position - p.Position).Magnitude
-                if dist < closetdist then
-                    closetdist = dist
-                    closetprompt = prompt
-                end
-            end
-        end
-        return closetprompt
-    end)
-    if s and r then return r end
-    return nil
-end
-
-function utility:hasEgg()
-    local s, r = pcall(function(...)
-        local char = self.LocalPlayer.Character
-        if not char then return false end
-        for _, obj in next, char:GetChildren() do
-            if obj.Name:lower():find("egg") then
-                return true
-            end
+        local conn = self.conns[connection]
+        if conn then
+            conn:Disconnect()
+            self.conns[connection] = nil
+            return true
         end
         return false
     end)
-    if s and r then return r end
-    return false
+    if s and r then
+        return true
+    end
+    return warn("failed to unbind")
 end
 
--- ⚡ VELOCITY WATCHER (peck detection)
-function utility:startVelocityWatcher(callback)
-    local char = self.LocalPlayer.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    
-    local connection
-    local lastPos = hrp.Position
-    
-    connection = utility.RunService.Heartbeat:Connect(function()
-        if not utility.eggEnabled then
-            connection:Disconnect()
-            return
-        end
-        
-        local currentChar = utility.LocalPlayer.Character
-        if not currentChar then
-            connection:Disconnect()
-            return
-        end
-        
-        local currentHRP = currentChar:FindFirstChild("HumanoidRootPart")
-        if not currentHRP then return end
-        
-        local velocity = currentHRP.AssemblyLinearVelocity
-        local speed = velocity.Magnitude
-        local posDelta = (currentHRP.Position - lastPos).Magnitude
-        local verticalVel = math.abs(velocity.Y)
-        
-        if speed > getgenv().config.knockbackThreshold 
-           or posDelta > 2 
-           or verticalVel > 20 then
-            connection:Disconnect()
-            callback()
-        end
-        
-        lastPos = currentHRP.Position
-    end)
-    
-    return connection
-end
-
--- ============================================
--- STEP 5: INIT EGG
--- ============================================
-function utility:initEgg()
+function utility:startInstantPickup()
     self.LocalPlayer = self.Players.LocalPlayer
-    if not fireproximityprompt then
-        return false, "Missing fireproximityprompt"
+    if not self.LocalPlayer then
+        return warn('failed to get localplayer')
     end
 
-    self.Client = self.ReplicatedStorage:FindFirstChild("Client")
-    if not self.Client then return false, "No Client" end
+    self.instantConn = self:bind(self.ProximityPromptService.PromptButtonHoldBegan, function(ProximityPrompt, Player)
+        if Player == self.LocalPlayer and tostring(ProximityPrompt) == "CarryAreaEgg" then
+            ProximityPrompt.HoldDuration = 0
+        end
+    end)
 
-    local eggStateModule = self.Client:FindFirstChild("EggState")
-    if not eggStateModule then return false, "No EggState" end
-
-    self.EggState = require(eggStateModule)
-    if not self.EggState then return false, "EggState require failed" end
+    if not self.instantConn then
+        return warn("some how failed to create conn")
+    end
 
     return true
 end
 
--- ============================================
--- STEP 6: HYBRID AUTO EGG (smooth move)
--- ============================================
-function utility:startEgg()
-    if self.eggConn then pcall(function() task.cancel(self.eggConn) end) end
-    self.eggConn = task.spawn(function()
-        while self.eggEnabled do
-            pcall(function()
-                local myChar = self.LocalPlayer.Character
-                local myPos = myChar and myChar.HumanoidRootPart.Position
-                if not myPos then task.wait(0.5) return end
-                
-                local hasEgg = self:hasEgg()
-                
-                -- STEP 1: May dala? → base
-                if hasEgg then
-                    self:GoTo({BoundsCFrame = CFrame.new(getgenv().config.basePos)}, true)
-                    task.wait(getgenv().config.teleportDelay)
-                else
-                    -- STEP 2: Wala pa → TELEPORT sa chicken
-                    local chickenEgg = self:getChickenEgg()
-                    if chickenEgg then
-                        self:TeleportTo(chickenEgg)
-                        task.wait(getgenv().config.teleportDelay)
-                        
-                        local p = self:getproximitypromptforegg(chickenEgg)
-                        if p then
-                            pcall(function() fireproximityprompt(p, 0, true) end)
-                        end
-                        task.wait(getgenv().config.grabDelay)
-                        
-                        -- STEP 3: Hintayin TUKA
-                        local pecked = false
-                        local conn = self:startVelocityWatcher(function()
-                            pecked = true
-                        end)
-                        
-                        local waitTime = 0
-                        while waitTime < 5 and not pecked do
-                            task.wait(0.05)
-                            waitTime = waitTime + 0.05
-                        end
-                        
-                        if conn then conn:Disconnect() end
-                        
-                        -- STEP 4: Pag na-tuka → Smooth MoveTo best egg
-                        if pecked then
-                            task.wait(getgenv().config.peckSettleDelay)
-                            
-                            local bestEgg = self:getBestEgg()
-                            if bestEgg then
-                                self:GoTo(bestEgg, true)
-                                task.wait(getgenv().config.teleportDelay)
-                                
-                                local bp = self:getproximitypromptforegg(bestEgg)
-                                if bp then
-                                    pcall(function() fireproximityprompt(bp, 0, true) end)
-                                end
-                                task.wait(getgenv().config.grabDelay)
-                                
-                                -- Dalhin sa base
-                                self:GoTo({BoundsCFrame = CFrame.new(getgenv().config.basePos)}, true)
-                                task.wait(getgenv().config.teleportDelay)
-                            end
-                        end
-                    end
-                end
-            end)
-            task.wait(0.5)
-        end
-    end)
-end
-
-function utility:stopEgg()
-    self.eggEnabled = false
-    if self.eggConn then
-        pcall(function() task.cancel(self.eggConn) end)
-        self.eggConn = nil
+function utility:stopInstantPickup()
+    if self.instantConn then
+        self:unbind(self.instantConn)
+        self.instantConn = nil
     end
 end
 
 -- ============================================
--- STEP 7: UI
+-- STEP 5: UI
 -- ============================================
 local COLORS = {
     BG = Color3.fromRGB(25, 25, 30),
     TITLE_BG = Color3.fromRGB(35, 35, 42),
     STROKE = Color3.fromRGB(60, 60, 70),
     TEXT = Color3.fromRGB(255, 255, 255),
-    SUBTEXT = Color3.fromRGB(180, 180, 190),
     GREEN = Color3.fromRGB(0, 180, 90),
     RED = Color3.fromRGB(200, 50, 50),
     KNOB = Color3.fromRGB(255, 255, 255),
@@ -334,8 +105,8 @@ local function createUI()
     ScreenGui.Parent = utility.CoreGui
 
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 280, 0, 180)
-    Main.Position = UDim2.new(0.5, -140, 0.5, -90)
+    Main.Size = UDim2.new(0, 260, 0, 180)
+    Main.Position = UDim2.new(0.5, -130, 0.5, -90)
     Main.BackgroundColor3 = COLORS.BG
     Main.BorderSizePixel = 0
     Main.Active = true
@@ -426,8 +197,8 @@ local function createUI()
         return {track = track, knob = knob, state = state, btn = btn}
     end
 
-    local speedToggle = makeToggle(50, "Speed Bypass", "⚡")
-    local eggToggle = makeToggle(95, "Auto Steal (Smooth)", "🥚")
+    local speedToggle = makeToggle(50, "Speed Hack", "⚡")
+    local pickupToggle = makeToggle(95, "Instant Pickup", "⚡")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
@@ -441,13 +212,13 @@ local function createUI()
 
     return {
         ScreenGui = ScreenGui, Main = Main,
-        speedToggle = speedToggle, eggToggle = eggToggle,
+        speedToggle = speedToggle, pickupToggle = pickupToggle,
         Status = Status, CloseBtn = CloseBtn
     }
 end
 
 -- ============================================
--- STEP 8: STATE + WIRING
+-- STEP 6: STATE + WIRING
 -- ============================================
 local ui = createUI()
 
@@ -458,6 +229,7 @@ local function setToggle(t, on)
     t.state.TextColor3 = on and COLORS.GREEN or COLORS.RED
 end
 
+-- ⚡ Speed Hack
 utility.speedEnabled = false
 utility.speedConn = nil
 
@@ -492,49 +264,42 @@ ui.speedToggle.btn.MouseButton1Click:Connect(function()
     end
 end)
 
-utility.eggEnabled = false
-utility.eggConn = nil
+-- ⚡ Instant Pickup
+utility.pickupEnabled = false
 
-ui.eggToggle.btn.MouseButton1Click:Connect(function()
-    if not utility.eggReady then
-        ui.Status.Text = "Status: ❌ Auto Egg not ready"
-        ui.Status.TextColor3 = COLORS.RED
-        return
-    end
-    utility.eggEnabled = not utility.eggEnabled
-    setToggle(ui.eggToggle, utility.eggEnabled)
-    if utility.eggEnabled then
-        utility:startEgg()
-        ui.Status.Text = "Status: 🥚 Auto Steal ON"
-        ui.Status.TextColor3 = COLORS.GREEN
+ui.pickupToggle.btn.MouseButton1Click:Connect(function()
+    utility.pickupEnabled = not utility.pickupEnabled
+    setToggle(ui.pickupToggle, utility.pickupEnabled)
+    
+    if utility.pickupEnabled then
+        local ok = utility:startInstantPickup()
+        if ok then
+            ui.Status.Text = "Status: ⚡ Instant Pickup ON"
+            ui.Status.TextColor3 = COLORS.GREEN
+        else
+            ui.Status.Text = "Status: ❌ Instant Pickup failed"
+            ui.Status.TextColor3 = COLORS.RED
+            utility.pickupEnabled = false
+            setToggle(ui.pickupToggle, false)
+        end
     else
-        utility:stopEgg()
-        ui.Status.Text = "Status: 🥚 Auto Steal OFF"
+        utility:stopInstantPickup()
+        ui.Status.Text = "Status: ⚡ Instant Pickup OFF"
         ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
     end
 end)
 
+-- Close
 ui.CloseBtn.MouseButton1Click:Connect(function()
     utility.speedEnabled = false
-    utility.eggEnabled = false
+    utility.pickupEnabled = false
     if utility.speedConn then utility.speedConn:Disconnect() end
-    utility:stopEgg()
+    utility:stopInstantPickup()
     ui.ScreenGui:Destroy()
 end)
 
 -- ============================================
--- STEP 9: INIT
+-- STEP 7: INIT
 -- ============================================
-task.spawn(function()
-    local eggOK, eggErr = utility:initEgg()
-    utility.eggReady = eggOK
-
-    if eggOK then
-        ui.Status.Text = "Status: ✅ Ready (Smooth)"
-        ui.Status.TextColor3 = COLORS.GREEN
-    else
-        ui.Status.Text = "Status: ❌ Egg init failed"
-        ui.Status.TextColor3 = COLORS.RED
-        warn("Egg: " .. tostring(eggErr))
-    end
-end)
+ui.Status.Text = "Status: ✅ Ready"
+ui.Status.TextColor3 = COLORS.GREEN
