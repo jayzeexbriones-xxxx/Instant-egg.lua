@@ -1,23 +1,43 @@
---// JAYZ SPEED TEST
+--// JAYZ SPEED + CHARACTER LOWER TEST
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
-local enabled = false
-local speed = 350
+local speedEnabled = false
+local lowerEnabled = false
+local speedValue = 100
+local lowerAmount = 2
+
+local speedConnection
+local lowerConnection
 local originalSpeed = 16
-local connection
+local originalCFrame
+
+local function getCharacter()
+    return player.Character
+end
+
+local function getHumanoid()
+    local char = getCharacter()
+    return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function getRoot()
+    local char = getCharacter()
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
 
 --// GUI
 local gui = Instance.new("ScreenGui")
-gui.Name = "JAYZ_SPEED_TEST"
+gui.Name = "JAYZ_TEST"
 gui.ResetOnSpawn = false
 gui.Parent = player:WaitForChild("PlayerGui")
 
 local main = Instance.new("Frame")
-main.Size = UDim2.new(0, 230, 0, 145)
-main.Position = UDim2.new(0.5, -115, 0.2, 0)
+main.Size = UDim2.new(0, 240, 0, 190)
+main.Position = UDim2.new(0.5, -120, 0.2, 0)
 main.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 main.BorderSizePixel = 0
 main.Parent = gui
@@ -26,77 +46,122 @@ local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 12)
 corner.Parent = main
 
---// Title
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 35)
-title.BackgroundTransparency = 1
-title.Text = "☰  JAYZ SPEED TEST"
-title.TextColor3 = Color3.fromRGB(255, 255, 255)
-title.TextSize = 14
-title.Font = Enum.Font.GothamBold
-title.Parent = main
+--// Header
+local header = Instance.new("TextButton")
+header.Size = UDim2.new(1, 0, 0, 38)
+header.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+header.BorderSizePixel = 0
+header.Text = "☰  JAYZ SPEED TEST"
+header.TextColor3 = Color3.fromRGB(255, 255, 255)
+header.TextSize = 14
+header.Font = Enum.Font.GothamBold
+header.Parent = main
+
+local headerCorner = Instance.new("UICorner")
+headerCorner.CornerRadius = UDim.new(0, 12)
+headerCorner.Parent = header
 
 --// Speed Input
-local input = Instance.new("TextBox")
-input.Size = UDim2.new(1, -20, 0, 40)
-input.Position = UDim2.new(0, 10, 0, 43)
-input.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-input.BorderSizePixel = 0
-input.PlaceholderText = "Enter speed"
-input.Text = "350"
-input.TextColor3 = Color3.fromRGB(255, 255, 255)
-input.TextSize = 14
-input.Font = Enum.Font.Gotham
-input.ClearTextOnFocus = false
-input.Parent = main
+local speedInput = Instance.new("TextBox")
+speedInput.Size = UDim2.new(0, 100, 0, 40)
+speedInput.Position = UDim2.new(0, 10, 0, 48)
+speedInput.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+speedInput.BorderSizePixel = 0
+speedInput.Text = "100"
+speedInput.PlaceholderText = "Speed"
+speedInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedInput.TextSize = 14
+speedInput.Font = Enum.Font.Gotham
+speedInput.ClearTextOnFocus = false
+speedInput.Parent = main
 
-local inputCorner = Instance.new("UICorner")
-inputCorner.CornerRadius = UDim.new(0, 8)
-inputCorner.Parent = input
+local speedCorner = Instance.new("UICorner")
+speedCorner.CornerRadius = UDim.new(0, 8)
+speedCorner.Parent = speedInput
 
---// Button
-local button = Instance.new("TextButton")
-button.Size = UDim2.new(1, -20, 0, 40)
-button.Position = UDim2.new(0, 10, 0, 92)
-button.BackgroundColor3 = Color3.fromRGB(80, 60, 180)
-button.BorderSizePixel = 0
-button.Text = "ENABLE SPEED"
-button.TextColor3 = Color3.fromRGB(255, 255, 255)
-button.TextSize = 13
-button.Font = Enum.Font.GothamBold
-button.Parent = main
+--// Speed ON/OFF
+local speedButton = Instance.new("TextButton")
+speedButton.Size = UDim2.new(0, 110, 0, 40)
+speedButton.Position = UDim2.new(0, 120, 0, 48)
+speedButton.BackgroundColor3 = Color3.fromRGB(80, 60, 180)
+speedButton.BorderSizePixel = 0
+speedButton.Text = "Speed : OFF"
+speedButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedButton.TextSize = 13
+speedButton.Font = Enum.Font.GothamBold
+speedButton.Parent = main
 
-local buttonCorner = Instance.new("UICorner")
-buttonCorner.CornerRadius = UDim.new(0, 8)
-buttonCorner.Parent = button
+local speedButtonCorner = Instance.new("UICorner")
+speedButtonCorner.CornerRadius = UDim.new(0, 8)
+speedButtonCorner.Parent = speedButton
 
---// Get Humanoid
-local function getHumanoid()
-    local character = player.Character
-    if not character then
-        return nil
+--// Character Lower ON/OFF
+local lowerButton = Instance.new("TextButton")
+lowerButton.Size = UDim2.new(1, -20, 0, 45)
+lowerButton.Position = UDim2.new(0, 10, 0, 105)
+lowerButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+lowerButton.BorderSizePixel = 0
+lowerButton.Text = "Character Lower : OFF"
+lowerButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+lowerButton.TextSize = 13
+lowerButton.Font = Enum.Font.GothamBold
+lowerButton.Parent = main
+
+local lowerCorner = Instance.new("UICorner")
+lowerCorner.CornerRadius = UDim.new(0, 8)
+lowerCorner.Parent = lowerButton
+
+--// Drag
+local dragging = false
+local dragStart
+local startPosition
+
+header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch
+    or input.UserInputType == Enum.UserInputType.MouseButton1 then
+
+        dragging = true
+        dragStart = input.Position
+        startPosition = main.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
     end
+end)
 
-    return character:FindFirstChildOfClass("Humanoid")
-end
+UserInputService.InputChanged:Connect(function(input)
+    if not dragging then return end
 
---// Enable / Disable
-button.Activated:Connect(function()
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+    or input.UserInputType == Enum.UserInputType.Touch then
 
-    if not enabled then
+        local delta = input.Position - dragStart
 
-        local value = tonumber(input.Text)
+        main.Position = UDim2.new(
+            startPosition.X.Scale,
+            startPosition.X.Offset + delta.X,
+            startPosition.Y.Scale,
+            startPosition.Y.Offset + delta.Y
+        )
+    end
+end)
 
-        if not value then
-            input.Text = "350"
+--// Speed
+speedButton.Activated:Connect(function()
+
+    if not speedEnabled then
+
+        local value = tonumber(speedInput.Text)
+
+        if not value or value <= 0 then
+            speedInput.Text = "100"
             return
         end
 
-        if value <= 0 then
-            return
-        end
-
-        speed = value
+        speedValue = value
 
         local humanoid = getHumanoid()
 
@@ -105,29 +170,29 @@ button.Activated:Connect(function()
         end
 
         originalSpeed = humanoid.WalkSpeed
-        humanoid.WalkSpeed = speed
+        humanoid.WalkSpeed = speedValue
 
-        if connection then
-            connection:Disconnect()
+        if speedConnection then
+            speedConnection:Disconnect()
         end
 
-        connection = RunService.Heartbeat:Connect(function()
+        speedConnection = RunService.Heartbeat:Connect(function()
             local hum = getHumanoid()
 
             if hum then
-                hum.WalkSpeed = speed
+                hum.WalkSpeed = speedValue
             end
         end)
 
-        enabled = true
-        button.Text = "✓ SPEED : " .. tostring(speed)
-        button.BackgroundColor3 = Color3.fromRGB(45, 145, 75)
+        speedEnabled = true
+        speedButton.Text = "Speed : ON"
+        speedButton.BackgroundColor3 = Color3.fromRGB(45, 145, 75)
 
     else
 
-        if connection then
-            connection:Disconnect()
-            connection = nil
+        if speedConnection then
+            speedConnection:Disconnect()
+            speedConnection = nil
         end
 
         local humanoid = getHumanoid()
@@ -136,20 +201,70 @@ button.Activated:Connect(function()
             humanoid.WalkSpeed = originalSpeed
         end
 
-        enabled = false
-        button.Text = "ENABLE SPEED"
-        button.BackgroundColor3 = Color3.fromRGB(80, 60, 180)
-
+        speedEnabled = false
+        speedButton.Text = "Speed : OFF"
+        speedButton.BackgroundColor3 = Color3.fromRGB(80, 60, 180)
     end
 end)
 
---// Restore after respawn
+--// Character Lower
+lowerButton.Activated:Connect(function()
+
+    if not lowerEnabled then
+
+        local root = getRoot()
+
+        if not root then
+            return
+        end
+
+        originalCFrame = root.CFrame
+
+        root.CFrame = root.CFrame * CFrame.new(0, -lowerAmount, 0)
+
+        lowerEnabled = true
+        lowerButton.Text = "Character Lower : ON"
+        lowerButton.BackgroundColor3 = Color3.fromRGB(45, 145, 75)
+
+        if lowerConnection then
+            lowerConnection:Disconnect()
+        end
+
+        lowerConnection = RunService.Heartbeat:Connect(function()
+            local currentRoot = getRoot()
+
+            if currentRoot then
+                currentRoot.CFrame =
+                    currentRoot.CFrame * CFrame.new(0, -lowerAmount, 0)
+            end
+        end)
+
+    else
+
+        if lowerConnection then
+            lowerConnection:Disconnect()
+            lowerConnection = nil
+        end
+
+        local root = getRoot()
+
+        if root and originalCFrame then
+            root.CFrame = originalCFrame
+        end
+
+        lowerEnabled = false
+        lowerButton.Text = "Character Lower : OFF"
+        lowerButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    end
+end)
+
+--// Respawn
 player.CharacterAdded:Connect(function(character)
 
     local humanoid = character:WaitForChild("Humanoid", 5)
 
-    if humanoid and enabled then
-        humanoid.WalkSpeed = speed
+    if humanoid and speedEnabled then
+        humanoid.WalkSpeed = speedValue
     end
 
 end)
