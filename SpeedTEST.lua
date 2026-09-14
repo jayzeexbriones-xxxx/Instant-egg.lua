@@ -13,27 +13,19 @@ local utility = {
     Players = game:GetService("Players"),
     ProximityPromptService = game:GetService("ProximityPromptService"),
     ReplicatedStorage = game:GetService("ReplicatedStorage"),
-    Workspace = game:GetService("Workspace"),
     CoreGui = game:GetService("CoreGui"),
+    UserInputService = game:GetService("UserInputService"),
     conns = {},
 }
 
 -- ============================================
 -- STEP 3: CONFIG
 -- ============================================
-utility.areas = {
-    "Forest", "Lake", "Desert", "Jungle", "Snow",
-    "Volcano", "Abyss Ocean", "Prehistoric", "Cosmic",
-    "Cherry Blossom", "Titan Temple",
-}
-
 getgenv().config = {
     speedValue = 260,
-    minArea = 9,
-    moveSpeed = 350,
-    characterRaise = 3,
-    espColor = Color3.fromRGB(255, 100, 255),
-    espLineColor = Color3.fromRGB(0, 255, 255),
+    trapCheckDelay = 1.5,       -- 🪤 Gaano katagal bago i-detect na trapped
+    trapRaiseHeight = 5,        -- 🚀 Taas ng lift pag trapped
+    trapCheckDistance = 1,      -- 🎯 Minimum movement threshold
 }
 
 -- ============================================
@@ -157,237 +149,78 @@ function utility:stopAntiRagdoll()
 end
 
 -- ============================================
--- STEP 7: AUTO GRAB BEST EGG
+-- STEP 7: ANTI-TRAP
 -- ============================================
-utility.autoGrabEnabled = false
-utility.autoGrabConn = nil
-utility.eggState = nil
-utility.client = nil
+utility.antiTrapEnabled = false
+utility.antiTrapConn = nil
+utility.lastPosition = nil
+utility.stuckTimer = 0
 
-function utility:getBestEgg()
-    local s, r = pcall(function(...)
-        local egg = nil
-        local biggestegg = 0
-        for key, data in next, self.eggState.ReadFieldEggs().Records do
-            local idx = table.find(self.areas, data.AreaId)
-            if idx and idx > getgenv().config.minArea then
-                if data.AssetScale > biggestegg then
-                    biggestegg = data.AssetScale
-                    egg = data
-                end
-            end
-        end
-        return egg
-    end)
-    if s and r then return r end
-    return nil
-end
-
-function utility:GoTo(pos)
-    pcall(function(...)
-        local dist = math.huge
-        local targetPos = pos.BoundsCFrame.Position
-        repeat
-            local dt = task.wait(0.01)
-            local char = self.LocalPlayer.Character
-            if not char then break end
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            if not hrp then break end
-            
-            local start = hrp.Position
-            dist = (targetPos - start).Magnitude
-            local half = start + (targetPos - start).Unit * dt * getgenv().config.moveSpeed
-            half = half + Vector3.new(0, getgenv().config.characterRaise, 0)
-            char:MoveTo(half)
-        until dist <= 5
-    end)
-end
-
-function utility:getproximitypromptforegg(egg)
-    local s, r = pcall(function(...)
-        local CarryAreaEggs = self.Workspace:QueryDescendants("#CarryAreaEgg")
-        local closetprompt = nil
-        local closetdist = math.huge
-        for key, prompt in next, CarryAreaEggs do
-            local p = prompt.Parent
-            if p then
-                local dist = (egg.BoundsCFrame.Position - p.Position).Magnitude
-                if dist < closetdist then
-                    closetdist = dist
-                    closetprompt = prompt
-                end
-            end
-        end
-        return closetprompt
-    end)
-    if s and r then return r end
-    return nil
-end
-
-function utility:startAutoGrab()
-    self.LocalPlayer = self.Players.LocalPlayer
-    if not self.LocalPlayer then return false, "No LocalPlayer" end
-    if not fireproximityprompt then return false, "Missing fireproximityprompt" end
-
-    self.client = self.ReplicatedStorage:FindFirstChild("Client")
-    if not self.client then return false, "No Client" end
-
-    local eggStateModule = self.client:FindFirstChild("EggState")
-    if not eggStateModule then return false, "No EggState" end
-
-    self.eggState = require(eggStateModule)
-    if not self.eggState then return false, "EggState require failed" end
-
-    utility.autoGrabConn = task.spawn(function()
-        while utility.autoGrabEnabled do
-            pcall(function()
-                local egg = self:getBestEgg()
-                if egg then
-                    self:GoTo(egg)
-                    task.wait(0.5)
-                    local p = self:getproximitypromptforegg(egg)
-                    if p then
-                        fireproximityprompt(p, 0, true)
-                    end
-                    task.wait(0.1)
-                    self:GoTo({BoundsCFrame = CFrame.new(514, 71, -368)})
-                else
-                    self:GoTo({BoundsCFrame = CFrame.new(514, 71, -368)})
-                end
-            end)
-            task.wait(1)
-        end
-    end)
-
-    return true
-end
-
-function utility:stopAutoGrab()
-    utility.autoGrabEnabled = false
-    if utility.autoGrabConn then
-        pcall(function() task.cancel(utility.autoGrabConn) end)
-        utility.autoGrabConn = nil
-    end
-end
-
--- ============================================
--- STEP 8: ESP LINE + HIGHLIGHT SA BEST EGG
--- ============================================
-utility.espEnabled = false
-utility.espConn = nil
-utility.espHighlights = {}
-utility.espLine = nil
-
-function utility:startESP()
+function utility:startAntiTrap()
     self.LocalPlayer = self.Players.LocalPlayer
     if not self.LocalPlayer then return false, "No LocalPlayer" end
 
-    -- Clean up old
-    for _, hl in next, utility.espHighlights do
-        pcall(function() hl:Destroy() end)
-    end
-    if utility.espLine then
-        pcall(function() utility.espLine:Destroy() end)
-        utility.espLine = nil
-    end
-    utility.espHighlights = {}
+    utility.lastPosition = nil
+    utility.stuckTimer = 0
 
-    -- Create line part
-    local line = Instance.new("Part")
-    line.Name = "ESPLine"
-    line.Anchored = true
-    line.CanCollide = false
-    line.Material = Enum.Material.Neon
-    line.Color = getgenv().config.espLineColor
-    line.Transparency = 0.3
-    line.Size = Vector3.new(0.15, 0.15, 1)
-    line.Parent = self.Workspace
-    utility.espLine = line
+    utility.antiTrapConn = self.RunService.Heartbeat:Connect(function(dt)
+        if not utility.antiTrapEnabled then return end
 
-    utility.espConn = self.RunService.Heartbeat:Connect(function()
-        if not utility.espEnabled then return end
-
-        -- Load eggState kung wala pa
-        if not self.eggState then
-            local client = self.ReplicatedStorage:FindFirstChild("Client")
-            if client then
-                local eggStateModule = client:FindFirstChild("EggState")
-                if eggStateModule then
-                    local s, r = pcall(require, eggStateModule)
-                    if s then self.eggState = r end
-                end
-            end
-            return
-        end
-
-        local egg = self:getBestEgg()
-        if not egg then return end
-
-        local eggPos = egg.BoundsCFrame.Position
         local char = self.LocalPlayer.Character
         if not char then return end
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
 
-        -- 🥚 Highlight yung best egg
-        for _, obj in next, self.Workspace:GetDescendants() do
-            if obj:IsA("BasePart") and obj.Name:lower():find("egg") then
-                local dist = (obj.Position - eggPos).Magnitude
-                if dist < 15 then
-                    if not utility.espHighlights[obj] then
-                        local hl = Instance.new("Highlight")
-                        hl.FillColor = getgenv().config.espColor
-                        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-                        hl.FillTransparency = 0.5
-                        hl.OutlineTransparency = 0
-                        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                        hl.Parent = obj
-                        utility.espHighlights[obj] = hl
-                    end
-                end
-            end
+        -- 🎮 Check kung may input
+        local moveVec = self.LocalPlayer:GetMoveVector()
+        local hasInput = moveVec.Magnitude > 0.1
+
+        -- 🪤 Check kung stuck
+        if not utility.lastPosition then
+            utility.lastPosition = hrp.Position
+            utility.stuckTimer = 0
+            return
         end
 
-        -- 🎯 Update line
-        if utility.espLine and utility.espLine.Parent then
-            local myPos = hrp.Position
-            local midPoint = (myPos + eggPos) / 2
-            local distance = (myPos - eggPos).Magnitude
+        local movement = (hrp.Position - utility.lastPosition).Magnitude
+
+        -- Kung may input pero hindi gumagalaw → trapped!
+        if hasInput and movement < getgenv().config.trapCheckDistance then
+            utility.stuckTimer = utility.stuckTimer + dt
             
-            utility.espLine.CFrame = CFrame.new(midPoint, eggPos)
-            utility.espLine.Size = Vector3.new(0.15, 0.15, distance)
-            utility.espLine.Transparency = 0.3
+            if utility.stuckTimer >= getgenv().config.trapCheckDelay then
+                -- 🚀 Lift pataas para maka-escape
+                local newPos = hrp.Position + Vector3.new(0, getgenv().config.trapRaiseHeight, 0)
+                pcall(function()
+                    hrp.CFrame = CFrame.new(newPos)
+                end)
+                
+                utility.stuckTimer = 0
+                utility.lastPosition = newPos
+            end
+        else
+            utility.stuckTimer = 0
         end
 
-        -- Clean up destroyed highlights
-        for obj, hl in next, utility.espHighlights do
-            if not obj.Parent then
-                pcall(function() hl:Destroy() end)
-                utility.espHighlights[obj] = nil
-            end
-        end
+        utility.lastPosition = hrp.Position
     end)
 
     return true
 end
 
-function utility:stopESP()
-    if utility.espConn then
-        utility.espConn:Disconnect()
-        utility.espConn = nil
+function utility:stopAntiTrap()
+    if utility.antiTrapConn then
+        utility.antiTrapConn:Disconnect()
+        utility.antiTrapConn = nil
     end
-    for _, hl in next, utility.espHighlights do
-        pcall(function() hl:Destroy() end)
-    end
-    if utility.espLine then
-        pcall(function() utility.espLine:Destroy() end)
-        utility.espLine = nil
-    end
-    utility.espHighlights = {}
+    utility.lastPosition = nil
+    utility.stuckTimer = 0
 end
 
 -- ============================================
--- STEP 9: UI
+-- STEP 8: UI
 -- ============================================
 local COLORS = {
     BG = Color3.fromRGB(25, 25, 30),
@@ -411,8 +244,8 @@ local function createUI()
     ScreenGui.Parent = utility.CoreGui
 
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 260, 0, 310)
-    Main.Position = UDim2.new(0.5, -130, 0.5, -155)
+    Main.Size = UDim2.new(0, 260, 0, 265)
+    Main.Position = UDim2.new(0.5, -130, 0.5, -132)
     Main.BackgroundColor3 = COLORS.BG
     Main.BorderSizePixel = 0
     Main.Active = true
@@ -506,12 +339,11 @@ local function createUI()
     local speedToggle = makeToggle(50, "Speed Hack", "⚡")
     local pickupToggle = makeToggle(95, "Instant Pickup", "⚡")
     local ragdollToggle = makeToggle(140, "Anti-Ragdoll", "🛡️")
-    local autoGrabToggle = makeToggle(185, "Auto Grab Best", "🎯")
-    local espToggle = makeToggle(230, "ESP Line Best", "🎯")
+    local trapToggle = makeToggle(185, "Anti-Trap", "🪤")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
-    Status.Position = UDim2.new(0, 15, 0, 275)
+    Status.Position = UDim2.new(0, 15, 0, 230)
     Status.BackgroundTransparency = 1
     Status.Text = "Status: Ready"
     Status.TextColor3 = Color3.fromRGB(255, 200, 0)
@@ -522,14 +354,13 @@ local function createUI()
     return {
         ScreenGui = ScreenGui, Main = Main,
         speedToggle = speedToggle, pickupToggle = pickupToggle,
-        ragdollToggle = ragdollToggle, autoGrabToggle = autoGrabToggle,
-        espToggle = espToggle,
+        ragdollToggle = ragdollToggle, trapToggle = trapToggle,
         Status = Status, CloseBtn = CloseBtn
     }
 end
 
 -- ============================================
--- STEP 10: STATE + WIRING
+-- STEP 9: STATE + WIRING
 -- ============================================
 local ui = createUI()
 
@@ -585,4 +416,87 @@ ui.pickupToggle.btn.MouseButton1Click:Connect(function()
     if utility.pickupEnabled then
         local ok = utility:startInstantPickup()
         if ok then
-            ui.Stat
+            ui.Status.Text = "Status: ⚡ Instant Pickup ON"
+            ui.Status.TextColor3 = COLORS.GREEN
+        else
+            ui.Status.Text = "Status: ❌ Instant Pickup failed"
+            ui.Status.TextColor3 = COLORS.RED
+            utility.pickupEnabled = false
+            setToggle(ui.pickupToggle, false)
+        end
+    else
+        utility:stopInstantPickup()
+        ui.Status.Text = "Status: ⚡ Instant Pickup OFF"
+        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+    end
+end)
+
+-- 🛡️ Anti-Ragdoll
+utility.antiRagdollEnabled = false
+
+ui.ragdollToggle.btn.MouseButton1Click:Connect(function()
+    utility.antiRagdollEnabled = not utility.antiRagdollEnabled
+    setToggle(ui.ragdollToggle, utility.antiRagdollEnabled)
+    
+    if utility.antiRagdollEnabled then
+        local ok, err = utility:startAntiRagdoll()
+        if ok then
+            ui.Status.Text = "Status: 🛡️ Anti-Ragdoll ON"
+            ui.Status.TextColor3 = COLORS.GREEN
+        else
+            ui.Status.Text = "Status: ❌ Anti-Ragdoll failed"
+            ui.Status.TextColor3 = COLORS.RED
+            utility.antiRagdollEnabled = false
+            setToggle(ui.ragdollToggle, false)
+            warn("Anti-Ragdoll: " .. tostring(err))
+        end
+    else
+        utility:stopAntiRagdoll()
+        ui.Status.Text = "Status: 🛡️ Anti-Ragdoll OFF"
+        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+    end
+end)
+
+-- 🪤 Anti-Trap
+utility.antiTrapEnabled = false
+
+ui.trapToggle.btn.MouseButton1Click:Connect(function()
+    utility.antiTrapEnabled = not utility.antiTrapEnabled
+    setToggle(ui.trapToggle, utility.antiTrapEnabled)
+    
+    if utility.antiTrapEnabled then
+        local ok = utility:startAntiTrap()
+        if ok then
+            ui.Status.Text = "Status: 🪤 Anti-Trap ON"
+            ui.Status.TextColor3 = COLORS.GREEN
+        else
+            ui.Status.Text = "Status: ❌ Anti-Trap failed"
+            ui.Status.TextColor3 = COLORS.RED
+            utility.antiTrapEnabled = false
+            setToggle(ui.trapToggle, false)
+        end
+    else
+        utility:stopAntiTrap()
+        ui.Status.Text = "Status: 🪤 Anti-Trap OFF"
+        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+    end
+end)
+
+-- Close
+ui.CloseBtn.MouseButton1Click:Connect(function()
+    utility.speedEnabled = false
+    utility.pickupEnabled = false
+    utility.antiRagdollEnabled = false
+    utility.antiTrapEnabled = false
+    if utility.speedConn then utility.speedConn:Disconnect() end
+    utility:stopInstantPickup()
+    utility:stopAntiRagdoll()
+    utility:stopAntiTrap()
+    ui.ScreenGui:Destroy()
+end)
+
+-- ============================================
+-- STEP 10: INIT
+-- ============================================
+ui.Status.Text = "Status: ✅ Ready"
+ui.Status.TextColor3 = COLORS.GREEN
