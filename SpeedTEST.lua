@@ -13,6 +13,7 @@ local utility = {
     Players = game:GetService("Players"),
     ProximityPromptService = game:GetService("ProximityPromptService"),
     ReplicatedStorage = game:GetService("ReplicatedStorage"),
+    Workspace = game:GetService("Workspace"),
     CoreGui = game:GetService("CoreGui"),
     conns = {},
 }
@@ -33,9 +34,7 @@ function utility:bind(connection, callback)
         self.conns[conn] = conn
         return self.conns[conn]
     end)
-    if s and r then
-        return r
-    end
+    if s and r then return r end
     return warn('failed to bind connection error: '..tostring(r))
 end
 
@@ -49,9 +48,7 @@ function utility:unbind(connection)
         end
         return false
     end)
-    if s and r then
-        return true
-    end
+    if s and r then return true end
     return warn("failed to unbind")
 end
 
@@ -73,7 +70,6 @@ function utility:startInstantPickup()
     if not self.instantConn then
         return warn("some how failed to create conn")
     end
-
     return true
 end
 
@@ -93,28 +89,17 @@ utility.ragdollConns = {}
 
 function utility:startAntiRagdoll()
     self.LocalPlayer = self.Players.LocalPlayer
-    if not self.LocalPlayer then
-        return false, "No LocalPlayer"
-    end
-
-    if not getconnections then
-        return false, "Missing getconnections"
-    end
+    if not self.LocalPlayer then return false, "No LocalPlayer" end
+    if not getconnections then return false, "Missing getconnections" end
 
     self.Packages = self.ReplicatedStorage:FindFirstChild("Packages")
-    if not self.Packages then
-        return false, "No Packages"
-    end
+    if not self.Packages then return false, "No Packages" end
 
     self.Networking = self.Packages:FindFirstChild("Networking")
-    if not self.Networking then
-        return false, "No Networking"
-    end
+    if not self.Networking then return false, "No Networking" end
 
     self.RigSync = self.Networking:FindFirstChild("RE/RigSync/Refresh")
-    if not self.RigSync then
-        return false, "No RE/RigSync/Refresh"
-    end
+    if not self.RigSync then return false, "No RE/RigSync/Refresh" end
 
     -- 🚫 Disconnect ragdoll triggers
     local conns = getconnections(self.RigSync.OnClientEvent)
@@ -136,14 +121,12 @@ function utility:startAntiRagdoll()
         local hum = char:FindFirstChildOfClass("Humanoid")
         if not hum then return end
 
-        -- 🔧 Remove RagdollConstraints
         for _, obj in next, char:GetDescendants() do
             if obj:IsA("RagdollConstraint") or obj:IsA("BallSocketConstraint") then
                 pcall(function() obj:Destroy() end)
             end
         end
 
-        -- 🔧 If ragdolled, force getting up
         if hum:GetState() == Enum.HumanoidStateType.Physics or
            hum:GetState() == Enum.HumanoidStateType.Ragdoll then
             pcall(function()
@@ -151,7 +134,6 @@ function utility:startAntiRagdoll()
             end)
         end
 
-        -- 🔧 Re-enable Motor6D joints
         for _, joint in next, char:GetDescendants() do
             if joint:IsA("Motor6D") and joint.Enabled == false then
                 pcall(function() joint.Enabled = true end)
@@ -171,7 +153,88 @@ function utility:stopAntiRagdoll()
 end
 
 -- ============================================
--- STEP 7: UI
+-- STEP 7: ANTI-DROP + AUTO-REGAB
+-- ============================================
+utility.antiDropEnabled = false
+utility.antiDropConn = nil
+utility.lastEggName = nil
+utility.lastEggPos = nil
+
+function utility:startAntiDrop()
+    self.LocalPlayer = self.Players.LocalPlayer
+    if not self.LocalPlayer then return false, "No LocalPlayer" end
+
+    utility.antiDropConn = self.RunService.Heartbeat:Connect(function()
+        if not utility.antiDropEnabled then return end
+
+        local char = self.LocalPlayer.Character
+        if not char then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        -- 🎯 Check kung may dala kang egg
+        local heldEgg = nil
+        for _, obj in next, char:GetChildren() do
+            if obj.Name:lower():find("egg") then
+                heldEgg = obj
+                break
+            end
+        end
+
+        if heldEgg then
+            -- 💾 Save yung egg info
+            utility.lastEggName = heldEgg.Name
+            utility.lastEggPos = hrp.Position
+
+            -- 🛡️ Check kung nag-ra-ragdoll
+            local isRagdolled = hum:GetState() == Enum.HumanoidStateType.Physics or
+                               hum:GetState() == Enum.HumanoidStateType.Ragdoll or
+                               hum.PlatformStand == true
+
+            if isRagdolled then
+                pcall(function()
+                    hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                    hum.PlatformStand = false
+                end)
+            end
+        else
+            -- 🥚 Wala nang egg — baka na-drop!
+            if utility.lastEggName and utility.lastEggPos then
+                for _, obj in next, self.Workspace:GetDescendants() do
+                    if obj.Name == utility.lastEggName and obj:IsA("BasePart") then
+                        local dist = (obj.Position - utility.lastEggPos).Magnitude
+                        if dist < 30 then
+                            -- 🎯 Auto-regrab!
+                            local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt")
+                            if not prompt and obj.Parent then
+                                prompt = obj.Parent:FindFirstChildWhichIsA("ProximityPrompt")
+                            end
+                            if prompt and fireproximityprompt then
+                                pcall(function()
+                                    fireproximityprompt(prompt, 0, true)
+                                end)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+
+    return true
+end
+
+function utility:stopAntiDrop()
+    if utility.antiDropConn then
+        utility.antiDropConn:Disconnect()
+        utility.antiDropConn = nil
+    end
+end
+
+-- ============================================
+-- STEP 8: UI
 -- ============================================
 local COLORS = {
     BG = Color3.fromRGB(25, 25, 30),
@@ -195,8 +258,8 @@ local function createUI()
     ScreenGui.Parent = utility.CoreGui
 
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 260, 0, 220)
-    Main.Position = UDim2.new(0.5, -130, 0.5, -110)
+    Main.Size = UDim2.new(0, 260, 0, 260)
+    Main.Position = UDim2.new(0.5, -130, 0.5, -130)
     Main.BackgroundColor3 = COLORS.BG
     Main.BorderSizePixel = 0
     Main.Active = true
@@ -290,10 +353,11 @@ local function createUI()
     local speedToggle = makeToggle(50, "Speed Hack", "⚡")
     local pickupToggle = makeToggle(95, "Instant Pickup", "⚡")
     local ragdollToggle = makeToggle(140, "Anti-Ragdoll", "🛡️")
+    local dropToggle = makeToggle(185, "Anti-Drop", "🥚")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
-    Status.Position = UDim2.new(0, 15, 0, 185)
+    Status.Position = UDim2.new(0, 15, 0, 225)
     Status.BackgroundTransparency = 1
     Status.Text = "Status: Ready"
     Status.TextColor3 = Color3.fromRGB(255, 200, 0)
@@ -303,13 +367,14 @@ local function createUI()
 
     return {
         ScreenGui = ScreenGui, Main = Main,
-        speedToggle = speedToggle, pickupToggle = pickupToggle, ragdollToggle = ragdollToggle,
+        speedToggle = speedToggle, pickupToggle = pickupToggle,
+        ragdollToggle = ragdollToggle, dropToggle = dropToggle,
         Status = Status, CloseBtn = CloseBtn
     }
 end
 
 -- ============================================
--- STEP 8: STATE + WIRING
+-- STEP 9: STATE + WIRING
 -- ============================================
 local ui = createUI()
 
@@ -406,19 +471,46 @@ ui.ragdollToggle.btn.MouseButton1Click:Connect(function()
     end
 end)
 
+-- 🥚 Anti-Drop
+utility.antiDropEnabled = false
+
+ui.dropToggle.btn.MouseButton1Click:Connect(function()
+    utility.antiDropEnabled = not utility.antiDropEnabled
+    setToggle(ui.dropToggle, utility.antiDropEnabled)
+    
+    if utility.antiDropEnabled then
+        local ok = utility:startAntiDrop()
+        if ok then
+            ui.Status.Text = "Status: 🥚 Anti-Drop ON"
+            ui.Status.TextColor3 = COLORS.GREEN
+        else
+            ui.Status.Text = "Status: ❌ Anti-Drop failed"
+            ui.Status.TextColor3 = COLORS.RED
+            utility.antiDropEnabled = false
+            setToggle(ui.dropToggle, false)
+        end
+    else
+        utility:stopAntiDrop()
+        ui.Status.Text = "Status: 🥚 Anti-Drop OFF"
+        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+    end
+end)
+
 -- Close
 ui.CloseBtn.MouseButton1Click:Connect(function()
     utility.speedEnabled = false
     utility.pickupEnabled = false
     utility.antiRagdollEnabled = false
+    utility.antiDropEnabled = false
     if utility.speedConn then utility.speedConn:Disconnect() end
     utility:stopInstantPickup()
     utility:stopAntiRagdoll()
+    utility:stopAntiDrop()
     ui.ScreenGui:Destroy()
 end)
 
 -- ============================================
--- STEP 9: INIT
+-- STEP 10: INIT
 -- ============================================
 ui.Status.Text = "Status: ✅ Ready"
 ui.Status.TextColor3 = COLORS.GREEN
