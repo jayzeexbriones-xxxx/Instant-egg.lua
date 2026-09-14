@@ -1,5 +1,5 @@
 -- ============================================================
--- STEAL AN EGG — FAST Auto Farm Best Egg
+-- STEAL AN EGG — Speed 700 + Auto Farm Best Egg (450)
 -- ============================================================
 
 local Players           = game:GetService("Players")
@@ -16,9 +16,9 @@ local LocalPlayer       = Players.LocalPlayer
 local State = {
     speedEnabled = false,
     farmEnabled  = false,
-    speedValue   = 400,
-    minArea      = 9,
-    tweenSpeed   = 1200,       -- 🚀 FAST tween speed (studs/sec)
+    speedValue   = 700,        -- ⚡ Speed Hack
+    minArea      = 9,          -- 🎯 Best egg area (9+)
+    tweenSpeed   = 450,        -- 🐢 Farm movement speed
 }
 
 local START_POS = Vector3.new(519.155, 70.576, -356.103)
@@ -81,7 +81,7 @@ local function initSpeedBypass()
     end)
     if not ok then warn("[Speed] hook failed:", tostring(err)); return false end
     
-    print("[Speed] OK")
+    print("[Speed] OK - bypass active")
     _speedActive = true
     return true
 end
@@ -154,7 +154,7 @@ local function getAssetScale(rec)
 end
 
 -- ============================================================
--- 🎯 FIND BEST EGG
+-- 🎯 FIND BEST EGG (rarity + scale, area 9+)
 -- ============================================================
 local function findBestEgg()
     if not EggState then return nil, nil end
@@ -196,7 +196,7 @@ local function findBestEgg()
 end
 
 -- ============================================================
--- 🚀 FAST TWEEN MOVE (instant-like)
+-- 🚀 FAST TWEEN MOVE
 -- ============================================================
 local function fastTweenTo(targetPos, timeout)
     local char = LocalPlayer.Character
@@ -206,7 +206,6 @@ local function fastTweenTo(targetPos, timeout)
     timeout = timeout or 8
     if (hrp.Position - targetPos).Magnitude <= 5 then return true end
     
-    -- 🚀 Tween-based movement (fast, steady)
     local dist = (targetPos - hrp.Position).Magnitude
     local tweenTime = math.max(dist / State.tweenSpeed, 0.05)
     
@@ -223,7 +222,6 @@ local function fastTweenTo(targetPos, timeout)
     
     tween:Play()
     
-    -- Wait for tween or timeout
     local t0 = tick()
     while not done and tick() - t0 < timeout do
         if not State.farmEnabled then 
@@ -237,7 +235,7 @@ local function fastTweenTo(targetPos, timeout)
 end
 
 -- ============================================================
--- 🚀 FAST FARM CYCLE
+-- 🚀 FARM CYCLE
 -- ============================================================
 local function farmCycle()
     if not State.farmEnabled then return end
@@ -252,7 +250,7 @@ local function farmCycle()
     local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
     if not part then return end
 
-    -- 🚀 Fast tween to egg
+    -- Fast tween to egg
     fastTweenTo(part.Position, 8)
     if not State.farmEnabled then return end
 
@@ -271,7 +269,7 @@ local function farmCycle()
 
     task.wait(0.1)
 
-    -- 🚀 Fast tween back to base
+    -- Fast tween back to base
     fastTweenTo(START_POS, 8)
     task.wait(0.1)
 end
@@ -329,7 +327,7 @@ local function createUI()
     Title.Size = UDim2.new(1, -50, 1, 0)
     Title.Position = UDim2.new(0, 12, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "🥚 Steal An Egg — FAST"
+    Title.Text = "🥚 Steal An Egg"
     Title.TextColor3 = COLORS.TEXT
     Title.TextSize = 13
     Title.Font = Enum.Font.GothamBold
@@ -389,8 +387,8 @@ local function createUI()
         return {track = track, knob = knob, state = state, btn = btn}
     end
 
-    local speedToggle = makeToggle(50, "Speed Bypass (400)", "⚡")
-    local farmToggle = makeToggle(95, "FAST Auto Farm", "🚀")
+    local speedToggle = makeToggle(50, "Speed Bypass (700)", "⚡")
+    local farmToggle = makeToggle(95, "Auto Farm Best", "🎯")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
@@ -418,6 +416,7 @@ local function setToggle(t, on)
     t.state.TextColor3 = on and COLORS.GREEN or COLORS.RED
 end
 
+-- Speed toggle
 ui.speedToggle.btn.MouseButton1Click:Connect(function()
     State.speedEnabled = not State.speedEnabled
     setToggle(ui.speedToggle, State.speedEnabled)
@@ -440,6 +439,7 @@ ui.speedToggle.btn.MouseButton1Click:Connect(function()
     end
 end)
 
+-- Farm toggle
 ui.farmToggle.btn.MouseButton1Click:Connect(function()
     if not State.farmEnabled then
         if not loadModules() then
@@ -449,19 +449,19 @@ ui.farmToggle.btn.MouseButton1Click:Connect(function()
         end
         State.farmEnabled = true
         setToggle(ui.farmToggle, true)
-        ui.Status.Text = "Status: 🚀 FAST Farm ON"
+        ui.Status.Text = "Status: 🎯 Auto Farm ON"
         ui.Status.TextColor3 = COLORS.GREEN
         
         task.spawn(function()
             while State.farmEnabled do
                 pcall(farmCycle)
-                task.wait(0.05)  -- 🚀 Sobrang mabilis na cycle
+                task.wait(0.1)
             end
         end)
     else
         State.farmEnabled = false
         setToggle(ui.farmToggle, false)
-        ui.Status.Text = "Status: 🚀 FAST Farm OFF"
+        ui.Status.Text = "Status: 🎯 Auto Farm OFF"
         ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
     end
 end)
@@ -474,7 +474,7 @@ ui.CloseBtn.MouseButton1Click:Connect(function()
 end)
 
 if speedReady then
-    ui.Status.Text = "Status: ✅ Ready (FAST)"
+    ui.Status.Text = "Status: ✅ Ready (Speed 700)"
     ui.Status.TextColor3 = COLORS.GREEN
 else
     ui.Status.Text = "Status: ⚠️ Speed bypass failed"
