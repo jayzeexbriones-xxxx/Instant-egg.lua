@@ -12,6 +12,7 @@ local utility = {
     RunService = game:GetService("RunService"),
     Players = game:GetService("Players"),
     ProximityPromptService = game:GetService("ProximityPromptService"),
+    ReplicatedStorage = game:GetService("ReplicatedStorage"),
     CoreGui = game:GetService("CoreGui"),
     conns = {},
 }
@@ -24,7 +25,7 @@ getgenv().config = {
 }
 
 -- ============================================
--- STEP 4: INSTANT PICKUP LOGIC
+-- STEP 4: BIND/UNBIND HELPERS
 -- ============================================
 function utility:bind(connection, callback)
     local s, r = pcall(function(...)
@@ -54,6 +55,9 @@ function utility:unbind(connection)
     return warn("failed to unbind")
 end
 
+-- ============================================
+-- STEP 5: INSTANT PICKUP
+-- ============================================
 function utility:startInstantPickup()
     self.LocalPlayer = self.Players.LocalPlayer
     if not self.LocalPlayer then
@@ -81,7 +85,93 @@ function utility:stopInstantPickup()
 end
 
 -- ============================================
--- STEP 5: UI
+-- STEP 6: ANTI-RAGDOLL
+-- ============================================
+utility.antiRagdollEnabled = false
+utility.antiRagdollConn = nil
+utility.ragdollConns = {}
+
+function utility:startAntiRagdoll()
+    self.LocalPlayer = self.Players.LocalPlayer
+    if not self.LocalPlayer then
+        return false, "No LocalPlayer"
+    end
+
+    if not getconnections then
+        return false, "Missing getconnections"
+    end
+
+    self.Packages = self.ReplicatedStorage:FindFirstChild("Packages")
+    if not self.Packages then
+        return false, "No Packages"
+    end
+
+    self.Networking = self.Packages:FindFirstChild("Networking")
+    if not self.Networking then
+        return false, "No Networking"
+    end
+
+    self.RigSync = self.Networking:FindFirstChild("RE/RigSync/Refresh")
+    if not self.RigSync then
+        return false, "No RE/RigSync/Refresh"
+    end
+
+    -- 🚫 Disconnect ragdoll triggers
+    local conns = getconnections(self.RigSync.OnClientEvent)
+    if conns then
+        for _, conn in next, conns do
+            pcall(function()
+                conn:Disconnect()
+                table.insert(utility.ragdollConns, conn)
+            end)
+        end
+    end
+
+    -- 🔧 Start recovery loop
+    utility.antiRagdollConn = self.RunService.Heartbeat:Connect(function()
+        if not utility.antiRagdollEnabled then return end
+
+        local char = self.LocalPlayer.Character
+        if not char then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+
+        -- 🔧 Remove RagdollConstraints
+        for _, obj in next, char:GetDescendants() do
+            if obj:IsA("RagdollConstraint") or obj:IsA("BallSocketConstraint") then
+                pcall(function() obj:Destroy() end)
+            end
+        end
+
+        -- 🔧 If ragdolled, force getting up
+        if hum:GetState() == Enum.HumanoidStateType.Physics or
+           hum:GetState() == Enum.HumanoidStateType.Ragdoll then
+            pcall(function()
+                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end)
+        end
+
+        -- 🔧 Re-enable Motor6D joints
+        for _, joint in next, char:GetDescendants() do
+            if joint:IsA("Motor6D") and joint.Enabled == false then
+                pcall(function() joint.Enabled = true end)
+            end
+        end
+    end)
+
+    return true
+end
+
+function utility:stopAntiRagdoll()
+    if utility.antiRagdollConn then
+        utility.antiRagdollConn:Disconnect()
+        utility.antiRagdollConn = nil
+    end
+    utility.ragdollConns = {}
+end
+
+-- ============================================
+-- STEP 7: UI
 -- ============================================
 local COLORS = {
     BG = Color3.fromRGB(25, 25, 30),
@@ -105,8 +195,8 @@ local function createUI()
     ScreenGui.Parent = utility.CoreGui
 
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 260, 0, 180)
-    Main.Position = UDim2.new(0.5, -130, 0.5, -90)
+    Main.Size = UDim2.new(0, 260, 0, 220)
+    Main.Position = UDim2.new(0.5, -130, 0.5, -110)
     Main.BackgroundColor3 = COLORS.BG
     Main.BorderSizePixel = 0
     Main.Active = true
@@ -199,10 +289,11 @@ local function createUI()
 
     local speedToggle = makeToggle(50, "Speed Hack", "⚡")
     local pickupToggle = makeToggle(95, "Instant Pickup", "⚡")
+    local ragdollToggle = makeToggle(140, "Anti-Ragdoll", "🛡️")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
-    Status.Position = UDim2.new(0, 15, 0, 145)
+    Status.Position = UDim2.new(0, 15, 0, 185)
     Status.BackgroundTransparency = 1
     Status.Text = "Status: Ready"
     Status.TextColor3 = Color3.fromRGB(255, 200, 0)
@@ -212,13 +303,13 @@ local function createUI()
 
     return {
         ScreenGui = ScreenGui, Main = Main,
-        speedToggle = speedToggle, pickupToggle = pickupToggle,
+        speedToggle = speedToggle, pickupToggle = pickupToggle, ragdollToggle = ragdollToggle,
         Status = Status, CloseBtn = CloseBtn
     }
 end
 
 -- ============================================
--- STEP 6: STATE + WIRING
+-- STEP 8: STATE + WIRING
 -- ============================================
 local ui = createUI()
 
@@ -289,17 +380,45 @@ ui.pickupToggle.btn.MouseButton1Click:Connect(function()
     end
 end)
 
+-- 🛡️ Anti-Ragdoll
+utility.antiRagdollEnabled = false
+
+ui.ragdollToggle.btn.MouseButton1Click:Connect(function()
+    utility.antiRagdollEnabled = not utility.antiRagdollEnabled
+    setToggle(ui.ragdollToggle, utility.antiRagdollEnabled)
+    
+    if utility.antiRagdollEnabled then
+        local ok, err = utility:startAntiRagdoll()
+        if ok then
+            ui.Status.Text = "Status: 🛡️ Anti-Ragdoll ON"
+            ui.Status.TextColor3 = COLORS.GREEN
+        else
+            ui.Status.Text = "Status: ❌ Anti-Ragdoll failed"
+            ui.Status.TextColor3 = COLORS.RED
+            utility.antiRagdollEnabled = false
+            setToggle(ui.ragdollToggle, false)
+            warn("Anti-Ragdoll: " .. tostring(err))
+        end
+    else
+        utility:stopAntiRagdoll()
+        ui.Status.Text = "Status: 🛡️ Anti-Ragdoll OFF"
+        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+    end
+end)
+
 -- Close
 ui.CloseBtn.MouseButton1Click:Connect(function()
     utility.speedEnabled = false
     utility.pickupEnabled = false
+    utility.antiRagdollEnabled = false
     if utility.speedConn then utility.speedConn:Disconnect() end
     utility:stopInstantPickup()
+    utility:stopAntiRagdoll()
     ui.ScreenGui:Destroy()
 end)
 
 -- ============================================
--- STEP 7: INIT
+-- STEP 9: INIT
 -- ============================================
 ui.Status.Text = "Status: ✅ Ready"
 ui.Status.TextColor3 = COLORS.GREEN
