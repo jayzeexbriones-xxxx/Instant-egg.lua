@@ -1,5 +1,5 @@
 -- ============================================
--- STEP 1: LOAD SPEED BYPASS (ito yung nag-aactivate)
+-- STEP 1: LOAD SPEED BYPASS
 -- ============================================
 pcall(function(...)
     loadstring(game:HttpGet("https://raw.githubusercontent.com/Lutosys/opensrc/refs/heads/main/stealaeggspeedbypass.lua"))()
@@ -25,7 +25,12 @@ utility.areas = {
     "Cherry Blossom", "Titan Temple",
 }
 
-getgenv().config = { minarea = 9 }
+getgenv().config = {
+    minarea = 9,        -- Minimum area para sa best egg
+    safeSpeed = 100,    -- Speed habang may dala (safe)
+    fastSpeed = 250,    -- Speed pag wala pang dala
+    basePos = Vector3.new(514, 71, -368) -- Base location
+}
 
 -- ============================================
 -- STEP 4: EGG LOGIC
@@ -39,6 +44,31 @@ function utility:getBestEgg()
             if idx and idx > getgenv().config.minarea then
                 if data.AssetScale > biggestegg then
                     biggestegg = data.AssetScale
+                    egg = data
+                end
+            end
+        end
+        return egg
+    end)
+    if s and r then return r end
+    return nil
+end
+
+-- Hanapin yung pinakamalapit na chicken egg (safe area)
+function utility:getChickenEgg()
+    local s, r = pcall(function(...)
+        local egg = nil
+        local closestDist = math.huge
+        local myPos = self.LocalPlayer.Character and self.LocalPlayer.Character.HumanoidRootPart.Position
+        if not myPos then return nil end
+        
+        for key, data in next, self.EggState.ReadFieldEggs().Records do
+            local idx = table.find(self.areas, data.AreaId)
+            -- Areas 1-3 = safe/starting areas (chicken eggs)
+            if idx and idx <= 3 then
+                local dist = (data.BoundsCFrame.Position - myPos).Magnitude
+                if dist < closestDist then
+                    closestDist = dist
                     egg = data
                 end
             end
@@ -103,6 +133,23 @@ function utility:getproximitypromptforegg(egg)
     return nil
 end
 
+-- Check kung may dala nang egg
+function utility:hasEgg()
+    local s, r = pcall(function(...)
+        local char = self.LocalPlayer.Character
+        if not char then return false end
+        -- Check kung may "Egg" na naka-attach sa character
+        for _, obj in next, char:GetChildren() do
+            if obj.Name:lower():find("egg") then
+                return true
+            end
+        end
+        return false
+    end)
+    if s and r then return r end
+    return false
+end
+
 -- ============================================
 -- STEP 5: INIT EGG
 -- ============================================
@@ -124,30 +171,64 @@ function utility:initEgg()
     return true
 end
 
+-- ============================================
+-- STEP 6: BAGONG AUTO EGG LOGIC
+-- ============================================
 function utility:startEgg()
     if self.eggConn then pcall(function() task.cancel(self.eggConn) end) end
     self.eggConn = task.spawn(function()
         while self.eggEnabled do
             pcall(function()
-                local egg = self:getBestEgg()
-                if egg then
-                    self:TeleportTo(egg.BoundsCFrame.Position)
-                    task.wait(0.3)
-
-                    local p = self:getproximitypromptforegg(egg)
-                    if p then
-                        pcall(function()
-                            fireproximityprompt(p, 0, true)
-                        end)
+                local myChar = self.LocalPlayer.Character
+                local myPos = myChar and myChar.HumanoidRootPart.Position
+                if not myPos then task.wait(0.5) return end
+                
+                local distanceToBase = (myPos - getgenv().config.basePos).Magnitude
+                local hasEgg = self:hasEgg()
+                
+                -- LOGIC:
+                -- 1. Kung may dala nang egg → dalhin sa base
+                if hasEgg and distanceToBase > 20 then
+                    self:TeleportTo(getgenv().config.basePos)
+                    task.wait(0.5)
+                    -- I-drop yung egg sa base
+                    local prompt = self:getproximitypromptforegg({BoundsCFrame = CFrame.new(getgenv().config.basePos)})
+                    if prompt then
+                        pcall(function() fireproximityprompt(prompt, 0, true) end)
                     end
-
                     task.wait(0.3)
-                    self:TeleportTo(Vector3.new(514, 71, -368))
+                
+                -- 2. Kung wala pang dala → kunin muna yung chicken egg (safe)
+                elseif not hasEgg then
+                    local chickenEgg = self:getChickenEgg()
+                    if chickenEgg then
+                        self:TeleportTo(chickenEgg.BoundsCFrame.Position)
+                        task.wait(0.3)
+                        local p = self:getproximitypromptforegg(chickenEgg)
+                        if p then
+                            pcall(function() fireproximityprompt(p, 0, true) end)
+                        end
+                        task.wait(0.3)
+                    end
+                    
+                    -- Pagkatapos kunin yung chicken egg, saka pumunta sa best egg
+                    local bestEgg = self:getBestEgg()
+                    if bestEgg then
+                        self:TeleportTo(bestEgg.BoundsCFrame.Position)
+                        task.wait(0.3)
+                        local p = self:getproximitypromptforegg(bestEgg)
+                        if p then
+                            pcall(function() fireproximityprompt(p, 0, true) end)
+                        end
+                        task.wait(0.3)
+                    end
+                
+                -- 3. Kung nasa base na at walang dala → balik sa egg hunting
                 else
-                    self:TeleportTo(Vector3.new(514, 71, -368))
+                    task.wait(0.5)
                 end
             end)
-            task.wait(1)
+            task.wait(0.5)
         end
     end)
 end
@@ -161,7 +242,7 @@ function utility:stopEgg()
 end
 
 -- ============================================
--- STEP 6: UI
+-- STEP 7: UI (same design)
 -- ============================================
 local COLORS = {
     BG = Color3.fromRGB(25, 25, 30),
@@ -320,7 +401,7 @@ local function createUI()
 end
 
 -- ============================================
--- STEP 7: STATE + WIRING
+-- STEP 8: STATE + WIRING
 -- ============================================
 local ui = createUI()
 
@@ -331,7 +412,7 @@ local function setToggle(t, on)
     t.state.TextColor3 = on and COLORS.GREEN or COLORS.RED
 end
 
--- Speed toggle — dito natin iko-connect sa loadstring bypass
+-- Speed toggle — SAFE SPEED (100 pag may egg, 250 pag wala)
 utility.speedEnabled = false
 utility.speedConn = nil
 
@@ -340,7 +421,6 @@ ui.speedToggle.btn.MouseButton1Click:Connect(function()
     setToggle(ui.speedToggle, utility.speedEnabled)
     
     if utility.speedEnabled then
-        -- I-activate yung speed loop
         if utility.speedConn then utility.speedConn:Disconnect() end
         utility.speedConn = utility.RunService.Heartbeat:Connect(function()
             if not utility.speedEnabled then return end
@@ -348,9 +428,15 @@ ui.speedToggle.btn.MouseButton1Click:Connect(function()
             if not char then return end
             local hum = char:FindFirstChild("Humanoid")
             if not hum then return end
-            hum.WalkSpeed = 500
+            
+            -- Dynamic speed: mas mabagal pag may dala (para hindi ma-detect)
+            if utility:hasEgg() then
+                hum.WalkSpeed = getgenv().config.safeSpeed
+            else
+                hum.WalkSpeed = getgenv().config.fastSpeed
+            end
         end)
-        ui.Status.Text = "Status: ⚡ Speed ON"
+        ui.Status.Text = "Status: ⚡ Speed ON (Safe)"
         ui.Status.TextColor3 = COLORS.GREEN
     else
         if utility.speedConn then
@@ -381,7 +467,7 @@ ui.eggToggle.btn.MouseButton1Click:Connect(function()
     setToggle(ui.eggToggle, utility.eggEnabled)
     if utility.eggEnabled then
         utility:startEgg()
-        ui.Status.Text = "Status: 🥚 Auto Egg ON"
+        ui.Status.Text = "Status: 🥚 Auto Egg ON (Smart)"
         ui.Status.TextColor3 = COLORS.GREEN
     else
         utility:stopEgg()
@@ -410,14 +496,14 @@ ui.CloseBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ============================================
--- STEP 8: INIT EGG ONLY
+-- STEP 9: INIT
 -- ============================================
 task.spawn(function()
     local eggOK, eggErr = utility:initEgg()
     utility.eggReady = eggOK
 
     if eggOK then
-        ui.Status.Text = "Status: ✅ Ready"
+        ui.Status.Text = "Status: ✅ Ready (Smart Mode)"
         ui.Status.TextColor3 = COLORS.GREEN
     else
         ui.Status.Text = "Status: ❌ Egg init failed"
