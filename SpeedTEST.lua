@@ -23,7 +23,7 @@ local utility = {
 -- ============================================
 getgenv().config = {
     speedValue = 260,
-    floatHeight = 1,           -- 🦘 1 stud float height
+    floatHeight = 1,           -- 🦘 1 stud float above ground
 }
 
 -- ============================================
@@ -147,14 +147,17 @@ function utility:stopAntiRagdoll()
 end
 
 -- ============================================
--- STEP 7: ANTI-TRAP v2 (1 stud float, steady)
+-- STEP 7: ANTI-TRAP v3 (Steady Float - Locked)
 -- ============================================
 utility.antiTrapEnabled = false
 utility.antiTrapConn = nil
+utility.groundY = nil
 
 function utility:startAntiTrap()
     self.LocalPlayer = self.Players.LocalPlayer
     if not self.LocalPlayer then return false, "No LocalPlayer" end
+
+    utility.groundY = nil
 
     utility.antiTrapConn = self.RunService.Heartbeat:Connect(function()
         if not utility.antiTrapEnabled then return end
@@ -166,27 +169,40 @@ function utility:startAntiTrap()
         local hum = char:FindFirstChildOfClass("Humanoid")
         if not hum then return end
 
-        -- 🦘 Check kung nasa ground ba
-        local rayOrigin = hrp.Position
-        local rayDirection = Vector3.new(0, -10, 0)
-        local raycastParams = RaycastParams.new()
-        raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-        raycastParams.FilterDescendantsInstances = {char}
+        -- 🔒 Disable fall states
+        pcall(function()
+            hum:SetStateEnabled(Enum.HumanoidStateType.Freefall, false)
+            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+        end)
 
-        local rayResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+        -- 🔍 Get ground level (once)
+        if not utility.groundY then
+            local rayOrigin = hrp.Position
+            local rayDirection = Vector3.new(0, -50, 0)
+            local raycastParams = RaycastParams.new()
+            raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+            raycastParams.FilterDescendantsInstances = {char}
+            raycastParams.IgnoreWater = true
 
-        if rayResult then
-            -- 📏 Calculate distance sa ground
-            local groundDist = (hrp.Position - rayResult.Position).Magnitude
-            
-            -- 🦘 Kung mas mababa sa target float height → lift pataas
-            if groundDist < getgenv().config.floatHeight then
-                local liftAmount = getgenv().config.floatHeight - groundDist
-                local newPos = hrp.Position + Vector3.new(0, liftAmount, 0)
-                pcall(function()
-                    hrp.CFrame = CFrame.new(newPos)
-                end)
+            local result = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+            if result then
+                utility.groundY = result.Position.Y
             end
+        end
+
+        -- 🦘 Lock sa 1 stud above ground
+        if utility.groundY then
+            local targetY = utility.groundY + getgenv().config.floatHeight
+            local newPos = Vector3.new(hrp.Position.X, targetY, hrp.Position.Z)
+            
+            pcall(function()
+                hrp.AssemblyLinearVelocity = Vector3.new(
+                    hrp.AssemblyLinearVelocity.X, 
+                    0, 
+                    hrp.AssemblyLinearVelocity.Z
+                )
+                hrp.CFrame = CFrame.new(newPos)
+            end)
         end
     end)
 
@@ -197,6 +213,19 @@ function utility:stopAntiTrap()
     if utility.antiTrapConn then
         utility.antiTrapConn:Disconnect()
         utility.antiTrapConn = nil
+    end
+    
+    utility.groundY = nil
+    
+    local char = self.Players.LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            pcall(function()
+                hum:SetStateEnabled(Enum.HumanoidStateType.Freefall, true)
+                hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+            end)
+        end
     end
 end
 
