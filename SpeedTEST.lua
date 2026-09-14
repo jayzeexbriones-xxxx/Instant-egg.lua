@@ -31,10 +31,12 @@ getgenv().config = {
     chickenAreas = 3,
     minArea = 9,
     knockbackThreshold = 15,
-    moveSpeed = 350,           -- 🚀 MoveTo multiplier
+    moveSpeed = 500,
+    characterRaise = 3,
     teleportDelay = 0.4,
     grabDelay = 0.4,
     peckSettleDelay = 0.15,
+    closeDistance = 10,
 }
 
 -- ============================================
@@ -82,11 +84,13 @@ function utility:getBestEgg()
     return nil
 end
 
--- 🚀 MoveTo-based GoTo (hindi teleport, safe!)
-function utility:GoTo(pos)
+-- 🚀 MoveTo-based GoTo (conditional raise)
+function utility:GoTo(pos, shouldRaise)
     pcall(function(...)
         local dist = math.huge
         local targetPos = pos.BoundsCFrame.Position
+        local raiseAmount = shouldRaise and getgenv().config.characterRaise or 0
+        
         repeat
             local dt = task.wait(0.01)
             local char = self.LocalPlayer.Character
@@ -96,9 +100,17 @@ function utility:GoTo(pos)
             
             local start = hrp.Position
             dist = (targetPos - start).Magnitude
+            
+            -- 🦘 Kung malayo pa, raise. Kung malapit na, bababa
+            local currentRaise = raiseAmount
+            if dist < getgenv().config.closeDistance then
+                currentRaise = 0  -- Baba pag malapit na
+            end
+            
             local half = start + (targetPos - start).Unit * dt * getgenv().config.moveSpeed
+            half = half + Vector3.new(0, currentRaise, 0)
             char:MoveTo(half)
-        until dist <= 5
+        until dist <= 3
     end)
 end
 
@@ -203,7 +215,7 @@ function utility:initEgg()
 end
 
 -- ============================================
--- STEP 6: LENNON STYLE AUTO EGG (MoveTo-based)
+-- STEP 6: LENNON STYLE AUTO EGG (conditional raise)
 -- ============================================
 function utility:startEgg()
     if self.eggConn then pcall(function() task.cancel(self.eggConn) end) end
@@ -216,15 +228,15 @@ function utility:startEgg()
                 
                 local hasEgg = self:hasEgg()
                 
-                -- STEP 1: May dala? → base
+                -- STEP 1: May dala? → base (with raise)
                 if hasEgg then
-                    self:GoTo({BoundsCFrame = CFrame.new(getgenv().config.basePos)})
+                    self:GoTo({BoundsCFrame = CFrame.new(getgenv().config.basePos)}, true)
                     task.wait(getgenv().config.teleportDelay)
                 else
-                    -- STEP 2: Wala pa → chicken egg
+                    -- STEP 2: Wala pa → chicken egg (with raise)
                     local chickenEgg = self:getChickenEgg()
                     if chickenEgg then
-                        self:GoTo(chickenEgg)
+                        self:GoTo(chickenEgg, true)
                         task.wait(getgenv().config.teleportDelay)
                         
                         local p = self:getproximitypromptforegg(chickenEgg)
@@ -247,23 +259,28 @@ function utility:startEgg()
                         
                         if conn then conn:Disconnect() end
                         
-                        -- STEP 4: Pag na-tuka → best egg (MoveTo)
+                        -- STEP 4: Pag na-tuka → best egg
                         if pecked then
                             task.wait(getgenv().config.peckSettleDelay)
                             
                             local bestEgg = self:getBestEgg()
                             if bestEgg then
-                                self:GoTo(bestEgg)
+                                -- 🚀 Pumunta sa best egg WITH raise
+                                self:GoTo(bestEgg, true)
                                 task.wait(getgenv().config.teleportDelay)
                                 
+                                -- 🥚 Nasa best egg na — hintayin mag-settle
+                                task.wait(0.2)
+                                
+                                -- AUTO KUHA
                                 local bp = self:getproximitypromptforegg(bestEgg)
                                 if bp then
                                     pcall(function() fireproximityprompt(bp, 0, true) end)
                                 end
                                 task.wait(getgenv().config.grabDelay)
                                 
-                                -- Dalhin sa base
-                                self:GoTo({BoundsCFrame = CFrame.new(getgenv().config.basePos)})
+                                -- 🏠 Dalhin sa base WITH raise
+                                self:GoTo({BoundsCFrame = CFrame.new(getgenv().config.basePos)}, true)
                                 task.wait(getgenv().config.teleportDelay)
                             end
                         end
