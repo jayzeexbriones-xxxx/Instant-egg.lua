@@ -1,43 +1,40 @@
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local lp = Players.LocalPlayer
+local debug = "=== DEBUG ===\n"
+debug = debug .. "Player: " .. game.Players.LocalPlayer.Name .. "\n"
 
-print("=== DEBUG ===")
-print("Player:", lp.Name)
-
-local client = ReplicatedStorage:FindFirstChild("Client")
-print("Client:", client)
+local client = game:GetService("ReplicatedStorage"):FindFirstChild("Client")
+debug = debug .. "Client: " .. tostring(client) .. "\n"
 
 if client then
     local eggState = client:FindFirstChild("EggState")
-    print("EggState:", eggState)
+    debug = debug .. "EggState: " .. tostring(eggState) .. "\n"
+    
     if eggState then
         local s, r = pcall(require, eggState)
         if s then
-            print("EggState loaded")
+            debug = debug .. "EggState: LOADED\n"
             local s2, r2 = pcall(function()
                 return r.ReadFieldEggs().Records
             end)
             if s2 then
                 local count = 0
-                for k, v in next, r2 do
-                    count = count + 1
-                    if count <= 3 then
-                        print("Sample:", v.AreaId, v.AssetScale)
-                    end
-                end
-                print("Total eggs:", count)
+                for k, v in next, r2 do count = count + 1 end
+                debug = debug .. "Total Eggs: " .. count .. "\n"
             else
-                print("ReadFieldEggs error:", r2)
+                debug = debug .. "ReadFieldEggs ERROR: " .. tostring(r2) .. "\n"
             end
         else
-            print("Require error:", r)
+            debug = debug .. "Require ERROR: " .. tostring(r) .. "\n"
         end
     end
 end
 
 local carry = workspace:QueryDescendants("#CarryAreaEgg")
-print("CarryAreaEgg count:", #carry)
-for i, v in next, carry do
-    if i <= 3 then print("Carry:", v.ClassName, v.Name) end
+debug = debug .. "CarryAreaEgg: " .. #carry .. "\n"
+
+-- 📋 I-copy sa clipboard
+if setclipboard then
+    setclipboard(debug)
+    warn("✅ Debug info copied to clipboard! Paste mo dito.")
+else
+    warn(debug)
 end
