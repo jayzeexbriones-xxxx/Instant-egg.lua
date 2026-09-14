@@ -1,5 +1,5 @@
 -- ============================================================
--- STEAL AN EGG — Auto Farm Best Egg (Simple Test)
+-- STEAL AN EGG — Auto Farm BEST Egg (Speed 500)
 -- ============================================================
 
 local Players = game:GetService("Players")
@@ -9,21 +9,12 @@ local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
--- ============================================================
--- STATE
--- ============================================================
 local State = {
     running = false,
-    speed = 260,
-    minArea = 9,
+    speed = 500,          -- ⚡ TAAS sa 500
 }
 
 local START_POS = Vector3.new(519.155, 70.576, -356.103)
-
-local AREA_NAMES = {
-    "Forest","Lake","Desert","Jungle","Snow","Volcano",
-    "Abyss Ocean","Prehistoric","Cosmic","Cherry Blossom","Titan Temple"
-}
 
 -- ============================================================
 -- SPEED BYPASS
@@ -116,50 +107,41 @@ local function hum()
     return c and c:FindFirstChildOfClass("Humanoid")
 end
 
-local function getRarityName(record)
-    if record and record.Rarity then
-        if type(record.Rarity) == "table" and record.Rarity._id then
-            return record.Rarity._id
-        end
-        if type(record.Rarity) == "string" then return record.Rarity end
-    end
-    return "Unknown"
-end
-
 -- ============================================================
--- FIND BEST EGG
+-- 🎯 FIND BEST EGG (rarity + scale based)
 -- ============================================================
 local function findBestEgg()
     if not EggState then return nil, nil end
     local ok, fieldEggs = pcall(function() return EggState.ReadFieldEggs() end)
     if not ok or not fieldEggs or not fieldEggs.Records then return nil, nil end
 
-    local r = root()
-    if not r then return nil, nil end
+    local bestRec, bestModel = nil, nil
+    local bestScore = -1
 
-    local bestRec, bestModel, bestDist = nil, nil, math.huge
     for _, rec in ipairs(fieldEggs.Records) do
-        local areaIdx = nil
-        for i, name in ipairs(AREA_NAMES) do
-            if rec.AreaId == name then areaIdx = i; break end
+        local scale = tonumber(rec.AssetScale) or 0
+        local rarityNum = 0
+        if rec.Rarity and type(rec.Rarity) == "table" then
+            rarityNum = rec.Rarity.RarityNumber or 0
         end
-        if areaIdx and areaIdx >= State.minArea then
+        -- 🎯 Score = rarity (heavier) + scale (lighter)
+        local score = (rarityNum * 1000) + scale
+
+        if score > bestScore then
             local model = Workspace:FindFirstChild("AreaEggSlotsClient", true)
                 and Workspace.AreaEggSlotsClient:FindFirstChild(rec.Uid)
                 or Workspace:FindFirstChild(rec.Uid, true)
             if model then
                 local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
                 if part then
-                    local d = (part.Position - r.Position).Magnitude
-                    if d < bestDist then
-                        bestDist = d
-                        bestRec = rec
-                        bestModel = model
-                    end
+                    bestScore = score
+                    bestRec = rec
+                    bestModel = model
                 end
             end
         end
     end
+
     return bestRec, bestModel
 end
 
@@ -205,9 +187,7 @@ local function farmCycle()
     if not loadEggState() then return end
 
     local rec, model = findBestEgg()
-    if not rec or not model then
-        return
-    end
+    if not rec or not model then return end
 
     local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
     if not part then return end
@@ -217,7 +197,6 @@ local function farmCycle()
 
     task.wait(0.3)
 
-    -- Claim
     pcall(function() EggState.CarryFieldEgg(rec.Uid) end)
     local prompt = model:FindFirstChild("CarryAreaEgg", true)
         or model:FindFirstChildWhichIsA("ProximityPrompt", true)
@@ -230,7 +209,6 @@ local function farmCycle()
 
     task.wait(0.5)
 
-    -- Return base
     walkTo(START_POS, 15)
     task.wait(0.5)
 end
@@ -272,7 +250,6 @@ local function createUI()
     local s1 = Instance.new("UIStroke", Main)
     s1.Color = COLORS.STROKE
 
-    -- Title
     local TitleBar = Instance.new("Frame", Main)
     TitleBar.Size = UDim2.new(1, 0, 0, 35)
     TitleBar.BackgroundColor3 = COLORS.TITLE_BG
@@ -289,7 +266,7 @@ local function createUI()
     Title.Size = UDim2.new(1, -50, 1, 0)
     Title.Position = UDim2.new(0, 12, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "🥚 Auto Farm Best Egg"
+    Title.Text = "🥚 Auto Farm BEST Egg"
     Title.TextColor3 = COLORS.TEXT
     Title.TextSize = 13
     Title.Font = Enum.Font.GothamBold
@@ -305,7 +282,6 @@ local function createUI()
     CloseBtn.Font = Enum.Font.GothamBold
     Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
 
-    -- Toggle
     local lbl = Instance.new("TextLabel", Main)
     lbl.Size = UDim2.new(1, -120, 0, 25)
     lbl.Position = UDim2.new(0, 15, 0, 55)
@@ -346,7 +322,6 @@ local function createUI()
     btn.BackgroundTransparency = 1
     btn.Text = ""
 
-    -- Status
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
     Status.Position = UDim2.new(0, 15, 0, 100)
@@ -364,9 +339,6 @@ local function createUI()
     }
 end
 
--- ============================================================
--- WIRING
--- ============================================================
 local ui = createUI()
 
 local function setToggle(on)
@@ -388,7 +360,7 @@ ui.btn.MouseButton1Click:Connect(function()
             setToggle(false)
             return
         end
-        ui.Status.Text = "Status: 🎯 Auto Farm ON"
+        ui.Status.Text = "Status: 🎯 Auto Farm ON (" .. State.speed .. ")"
         ui.Status.TextColor3 = COLORS.GREEN
         
         task.spawn(function()
@@ -410,5 +382,5 @@ ui.CloseBtn.MouseButton1Click:Connect(function()
     ui.ScreenGui:Destroy()
 end)
 
-ui.Status.Text = "Status: ✅ Ready"
+ui.Status.Text = "Status: ✅ Ready (Speed 500)"
 ui.Status.TextColor3 = COLORS.GREEN
