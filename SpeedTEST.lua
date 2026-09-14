@@ -23,9 +23,7 @@ local utility = {
 -- ============================================
 getgenv().config = {
     speedValue = 260,
-    trapCheckDelay = 1.5,       -- 🪤 Gaano katagal bago i-detect na trapped
-    trapRaiseHeight = 5,        -- 🚀 Taas ng lift pag trapped
-    trapCheckDistance = 1,      -- 🎯 Minimum movement threshold
+    floatHeight = 1,           -- 🦘 1 stud float height
 }
 
 -- ============================================
@@ -149,21 +147,16 @@ function utility:stopAntiRagdoll()
 end
 
 -- ============================================
--- STEP 7: ANTI-TRAP
+-- STEP 7: ANTI-TRAP v2 (1 stud float, steady)
 -- ============================================
 utility.antiTrapEnabled = false
 utility.antiTrapConn = nil
-utility.lastPosition = nil
-utility.stuckTimer = 0
 
 function utility:startAntiTrap()
     self.LocalPlayer = self.Players.LocalPlayer
     if not self.LocalPlayer then return false, "No LocalPlayer" end
 
-    utility.lastPosition = nil
-    utility.stuckTimer = 0
-
-    utility.antiTrapConn = self.RunService.Heartbeat:Connect(function(dt)
+    utility.antiTrapConn = self.RunService.Heartbeat:Connect(function()
         if not utility.antiTrapEnabled then return end
 
         local char = self.LocalPlayer.Character
@@ -173,38 +166,28 @@ function utility:startAntiTrap()
         local hum = char:FindFirstChildOfClass("Humanoid")
         if not hum then return end
 
-        -- 🎮 Check kung may input
-        local moveVec = self.LocalPlayer:GetMoveVector()
-        local hasInput = moveVec.Magnitude > 0.1
+        -- 🦘 Check kung nasa ground ba
+        local rayOrigin = hrp.Position
+        local rayDirection = Vector3.new(0, -10, 0)
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+        raycastParams.FilterDescendantsInstances = {char}
 
-        -- 🪤 Check kung stuck
-        if not utility.lastPosition then
-            utility.lastPosition = hrp.Position
-            utility.stuckTimer = 0
-            return
-        end
+        local rayResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
 
-        local movement = (hrp.Position - utility.lastPosition).Magnitude
-
-        -- Kung may input pero hindi gumagalaw → trapped!
-        if hasInput and movement < getgenv().config.trapCheckDistance then
-            utility.stuckTimer = utility.stuckTimer + dt
+        if rayResult then
+            -- 📏 Calculate distance sa ground
+            local groundDist = (hrp.Position - rayResult.Position).Magnitude
             
-            if utility.stuckTimer >= getgenv().config.trapCheckDelay then
-                -- 🚀 Lift pataas para maka-escape
-                local newPos = hrp.Position + Vector3.new(0, getgenv().config.trapRaiseHeight, 0)
+            -- 🦘 Kung mas mababa sa target float height → lift pataas
+            if groundDist < getgenv().config.floatHeight then
+                local liftAmount = getgenv().config.floatHeight - groundDist
+                local newPos = hrp.Position + Vector3.new(0, liftAmount, 0)
                 pcall(function()
                     hrp.CFrame = CFrame.new(newPos)
                 end)
-                
-                utility.stuckTimer = 0
-                utility.lastPosition = newPos
             end
-        else
-            utility.stuckTimer = 0
         end
-
-        utility.lastPosition = hrp.Position
     end)
 
     return true
@@ -215,8 +198,6 @@ function utility:stopAntiTrap()
         utility.antiTrapConn:Disconnect()
         utility.antiTrapConn = nil
     end
-    utility.lastPosition = nil
-    utility.stuckTimer = 0
 end
 
 -- ============================================
@@ -339,7 +320,7 @@ local function createUI()
     local speedToggle = makeToggle(50, "Speed Hack", "⚡")
     local pickupToggle = makeToggle(95, "Instant Pickup", "⚡")
     local ragdollToggle = makeToggle(140, "Anti-Ragdoll", "🛡️")
-    local trapToggle = makeToggle(185, "Anti-Trap", "🪤")
+    local trapToggle = makeToggle(185, "Anti-Trap (Float)", "🪤")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
@@ -457,7 +438,7 @@ ui.ragdollToggle.btn.MouseButton1Click:Connect(function()
     end
 end)
 
--- 🪤 Anti-Trap
+-- 🪤 Anti-Trap (Float)
 utility.antiTrapEnabled = false
 
 ui.trapToggle.btn.MouseButton1Click:Connect(function()
@@ -467,7 +448,7 @@ ui.trapToggle.btn.MouseButton1Click:Connect(function()
     if utility.antiTrapEnabled then
         local ok = utility:startAntiTrap()
         if ok then
-            ui.Status.Text = "Status: 🪤 Anti-Trap ON"
+            ui.Status.Text = "Status: 🪤 Anti-Trap ON (Float)"
             ui.Status.TextColor3 = COLORS.GREEN
         else
             ui.Status.Text = "Status: ❌ Anti-Trap failed"
