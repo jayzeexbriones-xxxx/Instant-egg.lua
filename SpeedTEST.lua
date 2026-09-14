@@ -26,9 +26,11 @@ utility.areas = {
 }
 
 getgenv().config = {
-    speedValue = 400,          -- ⚡ Mas mataas (400)
+    speedValue = 400,
     basePos = Vector3.new(514, 71, -368),
-    chickenAreas = 3,          -- Areas 1-3 = chicken eggs
+    chickenAreas = 3,      -- Areas 1-3 = chicken eggs
+    minArea = 9,           -- Minimum area para sa best egg
+    peckWaitTime = 3,      -- Max seconds na hintayin yung tuka
 }
 
 -- ============================================
@@ -47,6 +49,25 @@ function utility:getChickenEgg()
                 local dist = (data.BoundsCFrame.Position - myPos).Magnitude
                 if dist < closestDist then
                     closestDist = dist
+                    egg = data
+                end
+            end
+        end
+        return egg
+    end)
+    if s and r then return r end
+    return nil
+end
+
+function utility:getBestEgg()
+    local s, r = pcall(function(...)
+        local egg = nil
+        local biggestegg = 0
+        for key, data in next, self.EggState.ReadFieldEggs().Records do
+            local idx = table.find(self.areas, data.AreaId)
+            if idx and idx > getgenv().config.minArea then
+                if data.AssetScale > biggestegg then
+                    biggestegg = data.AssetScale
                     egg = data
                 end
             end
@@ -126,6 +147,44 @@ function utility:hasEgg()
     return false
 end
 
+-- Detect kung na-tuka na ng chicken
+function utility:isBeingPecked()
+    local s, r = pcall(function(...)
+        local char = self.LocalPlayer.Character
+        if not char then return false end
+        
+        -- Check kung may chicken na malapit sa character
+        for _, obj in next, self.Workspace:GetDescendants() do
+            if obj.Name:lower():find("chicken") and obj:IsA("Model") then
+                local chickenHRP = obj:FindFirstChild("HumanoidRootPart")
+                if chickenHRP then
+                    local dist = (chickenHRP.Position - char.HumanoidRootPart.Position).Magnitude
+                    if dist < 5 then  -- Malapit na chicken
+                        return true
+                    end
+                end
+            end
+        end
+        return false
+    end)
+    if s and r then return r end
+    return false
+end
+
+-- Check kung may health damage (na-tuka)
+function utility:wasPecked()
+    local char = self.LocalPlayer.Character
+    if not char then return false end
+    local hum = char:FindFirstChild("Humanoid")
+    if not hum then return false end
+    
+    -- Kung bumaba health from max, na-tuka na
+    if hum.Health < hum.MaxHealth then
+        return true
+    end
+    return false
+end
+
 -- ============================================
 -- STEP 5: INIT EGG
 -- ============================================
@@ -148,7 +207,7 @@ function utility:initEgg()
 end
 
 -- ============================================
--- STEP 6: FAST AUTO EGG (Lennon style)
+-- STEP 6: LENNON STYLE AUTO EGG (with peck trigger)
 -- ============================================
 function utility:startEgg()
     if self.eggConn then pcall(function() task.cancel(self.eggConn) end) end
@@ -161,23 +220,52 @@ function utility:startEgg()
                 
                 local hasEgg = self:hasEgg()
                 
-                -- LOGIC (Lennon style - mabilis na cycle):
+                -- STEP 1: Kung may dala → dalhin sa base
                 if hasEgg then
-                    -- 1. May dala → base agad
                     self:TeleportTo(getgenv().config.basePos)
-                    task.wait(0.3)
+                    task.wait(0.5)
                 else
-                    -- 2. Wala pa → chicken egg
+                    -- STEP 2: Wala pa → chicken egg muna
                     local chickenEgg = self:getChickenEgg()
                     if chickenEgg then
                         self:TeleportTo(chickenEgg.BoundsCFrame.Position)
-                        task.wait(0.2)
+                        task.wait(0.3)
                         
                         local p = self:getproximitypromptforegg(chickenEgg)
                         if p then
                             pcall(function() fireproximityprompt(p, 0, true) end)
                         end
-                        task.wait(0.2)
+                        
+                        -- STEP 3: Hintayin na tukaan ng chicken
+                        local waitTime = 0
+                        local pecked = false
+                        while waitTime < getgenv().config.peckWaitTime do
+                            if self:wasPecked() or self:isBeingPecked() then
+                                pecked = true
+                                break
+                            end
+                            task.wait(0.1)
+                            waitTime = waitTime + 0.1
+                        end
+                        
+                        -- STEP 4: Pag na-tuka → teleport sa best egg
+                        if pecked then
+                            local bestEgg = self:getBestEgg()
+                            if bestEgg then
+                                self:TeleportTo(bestEgg.BoundsCFrame.Position)
+                                task.wait(0.3)
+                                
+                                local bp = self:getproximitypromptforegg(bestEgg)
+                                if bp then
+                                    pcall(function() fireproximityprompt(bp, 0, true) end)
+                                end
+                                task.wait(0.3)
+                                
+                                -- Dalhin sa base
+                                self:TeleportTo(getgenv().config.basePos)
+                                task.wait(0.5)
+                            end
+                        end
                     end
                 end
             end)
@@ -313,7 +401,7 @@ local function createUI()
     end
 
     local speedToggle = makeToggle(50, "Speed Bypass", "⚡")
-    local eggToggle = makeToggle(95, "Auto Egg Farm", "🥚")
+    local eggToggle = makeToggle(95, "Auto Steal (Lennon)", "🥚")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
@@ -344,7 +432,6 @@ local function setToggle(t, on)
     t.state.TextColor3 = on and COLORS.GREEN or COLORS.RED
 end
 
--- Speed toggle (400)
 utility.speedEnabled = false
 utility.speedConn = nil
 
@@ -379,7 +466,6 @@ ui.speedToggle.btn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Egg toggle
 utility.eggEnabled = false
 utility.eggConn = nil
 
@@ -393,11 +479,11 @@ ui.eggToggle.btn.MouseButton1Click:Connect(function()
     setToggle(ui.eggToggle, utility.eggEnabled)
     if utility.eggEnabled then
         utility:startEgg()
-        ui.Status.Text = "Status: 🥚 Auto Egg ON (Fast)"
+        ui.Status.Text = "Status: 🥚 Auto Steal ON"
         ui.Status.TextColor3 = COLORS.GREEN
     else
         utility:stopEgg()
-        ui.Status.Text = "Status: 🥚 Auto Egg OFF"
+        ui.Status.Text = "Status: 🥚 Auto Steal OFF"
         ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
     end
 end)
