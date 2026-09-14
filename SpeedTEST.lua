@@ -26,11 +26,13 @@ utility.areas = {
 }
 
 getgenv().config = {
-    speedValue = 250,           -- ⚡ 250 para mabilis ma-tuka
+    speedValue = 280,           -- ⚡ Taasan sa 280
     basePos = Vector3.new(514, 71, -368),
-    chickenAreas = 3,           -- Areas 1-3 = chicken
-    minArea = 9,                -- Best egg = area 9+
-    knockbackThreshold = 25,    -- Sensitivity ng tuka detection
+    chickenAreas = 3,
+    minArea = 9,
+    knockbackThreshold = 25,
+    teleportDelay = 0.6,        -- 🐢 Delay pagkatapos teleport
+    grabDelay = 0.5,            -- 🐢 Delay pagkatapos kunin egg
 }
 
 -- ============================================
@@ -147,7 +149,6 @@ function utility:hasEgg()
     return false
 end
 
--- ⚡ VELOCITY-BASED PECK DETECTION
 function utility:startVelocityWatcher(callback)
     local char = self.LocalPlayer.Character
     if not char then return end
@@ -204,7 +205,7 @@ function utility:initEgg()
 end
 
 -- ============================================
--- STEP 6: LENNON STYLE AUTO EGG
+-- STEP 6: LENNON STYLE AUTO EGG (with delays)
 -- ============================================
 function utility:startEgg()
     if self.eggConn then pcall(function() task.cancel(self.eggConn) end) end
@@ -213,27 +214,28 @@ function utility:startEgg()
             pcall(function()
                 local myChar = self.LocalPlayer.Character
                 local myPos = myChar and myChar.HumanoidRootPart.Position
-                if not myPos then task.wait(0.3) return end
+                if not myPos then task.wait(0.5) return end
                 
                 local hasEgg = self:hasEgg()
                 
                 -- STEP 1: May dala? → base
                 if hasEgg then
                     self:TeleportTo(getgenv().config.basePos)
-                    task.wait(0.5)
+                    task.wait(getgenv().config.teleportDelay)
                 else
-                    -- STEP 2: Wala pa → chicken egg muna
+                    -- STEP 2: Wala pa → chicken egg
                     local chickenEgg = self:getChickenEgg()
                     if chickenEgg then
                         self:TeleportTo(chickenEgg.BoundsCFrame.Position)
-                        task.wait(0.3)
+                        task.wait(getgenv().config.teleportDelay)
                         
                         local p = self:getproximitypromptforegg(chickenEgg)
                         if p then
                             pcall(function() fireproximityprompt(p, 0, true) end)
                         end
+                        task.wait(getgenv().config.grabDelay)
                         
-                        -- STEP 3: Hintayin TUKA (velocity trigger)
+                        -- STEP 3: Hintayin TUKA
                         local pecked = false
                         local conn = self:startVelocityWatcher(function()
                             pecked = true
@@ -249,26 +251,28 @@ function utility:startEgg()
                         
                         -- STEP 4: Pag na-tuka → best egg → kunin → base
                         if pecked then
+                            task.wait(0.3)  -- 🐢 Hintayin mag-settle yung character
+                            
                             local bestEgg = self:getBestEgg()
                             if bestEgg then
                                 self:TeleportTo(bestEgg.BoundsCFrame.Position)
-                                task.wait(0.3)
+                                task.wait(getgenv().config.teleportDelay)
                                 
                                 local bp = self:getproximitypromptforegg(bestEgg)
                                 if bp then
                                     pcall(function() fireproximityprompt(bp, 0, true) end)
                                 end
-                                task.wait(0.3)
+                                task.wait(getgenv().config.grabDelay)
                                 
                                 -- Dalhin sa base
                                 self:TeleportTo(getgenv().config.basePos)
-                                task.wait(0.5)
+                                task.wait(getgenv().config.teleportDelay)
                             end
                         end
                     end
                 end
             end)
-            task.wait(0.3)
+            task.wait(0.5)  -- 🐢 Mas mahabang delay sa cycle
         end
     end)
 end
