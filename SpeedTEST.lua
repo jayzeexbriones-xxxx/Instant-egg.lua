@@ -30,10 +30,11 @@ getgenv().config = {
     basePos = Vector3.new(514, 71, -368),
     chickenAreas = 3,
     minArea = 9,
-    knockbackThreshold = 25,
-    teleportDelay = 0.6,
-    grabDelay = 0.5,
-    peckSettleDelay = 0.25,
+    knockbackThreshold = 15,
+    moveSpeed = 350,           -- 🚀 MoveTo multiplier
+    teleportDelay = 0.4,
+    grabDelay = 0.4,
+    peckSettleDelay = 0.15,
 }
 
 -- ============================================
@@ -81,55 +82,42 @@ function utility:getBestEgg()
     return nil
 end
 
-function utility:TeleportTo(pos)
-    local char = self.LocalPlayer.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    pcall(function()
-        hrp.CFrame = CFrame.new(pos)
+-- 🚀 MoveTo-based GoTo (hindi teleport, safe!)
+function utility:GoTo(pos)
+    pcall(function(...)
+        local dist = math.huge
+        local targetPos = pos.BoundsCFrame.Position
+        repeat
+            local dt = task.wait(0.01)
+            local char = self.LocalPlayer.Character
+            if not char then break end
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if not hrp then break end
+            
+            local start = hrp.Position
+            dist = (targetPos - start).Magnitude
+            local half = start + (targetPos - start).Unit * dt * getgenv().config.moveSpeed
+            char:MoveTo(half)
+        until dist <= 5
     end)
 end
 
 function utility:getproximitypromptforegg(egg)
     local s, r = pcall(function(...)
-        local eggPos = egg.BoundsCFrame.Position
-        local closestPrompt = nil
-        local closestDist = math.huge
-
-        for _, prompt in next, self.Workspace:GetDescendants() do
-            if prompt:IsA("ProximityPrompt") and prompt.Enabled then
-                local parent = prompt.Parent
-                if parent then
-                    local pPos = parent:IsA("BasePart") and parent.Position or (parent:FindFirstChildWhichIsA("BasePart") and parent:FindFirstChildWhichIsA("BasePart").Position)
-                    if pPos then
-                        local dist = (eggPos - pPos).Magnitude
-                        if dist < closestDist and dist < 15 then
-                            closestDist = dist
-                            closestPrompt = prompt
-                        end
-                    end
+        local CarryAreaEggs = self.Workspace:QueryDescendants("#CarryAreaEgg")
+        local closetprompt = nil
+        local closetdist = math.huge
+        for key, prompt in next, CarryAreaEggs do
+            local p = prompt.Parent
+            if p then
+                local dist = (egg.BoundsCFrame.Position - p.Position).Magnitude
+                if dist < closetdist then
+                    closetdist = dist
+                    closetprompt = prompt
                 end
             end
         end
-
-        if not closestPrompt then
-            local CarryAreaEggs = self.Workspace:QueryDescendants("#CarryAreaEgg")
-            for _, prompt in next, CarryAreaEggs do
-                if prompt:IsA("ProximityPrompt") then
-                    local p = prompt.Parent
-                    if p and p:IsA("BasePart") then
-                        local dist = (eggPos - p.Position).Magnitude
-                        if dist < closestDist then
-                            closestDist = dist
-                            closestPrompt = prompt
-                        end
-                    end
-                end
-            end
-        end
-
-        return closestPrompt
+        return closetprompt
     end)
     if s and r then return r end
     return nil
@@ -150,7 +138,7 @@ function utility:hasEgg()
     return false
 end
 
--- ⚡ VELOCITY WATCHER
+-- ⚡ MAS SENSITIVE VELOCITY WATCHER
 function utility:startVelocityWatcher(callback)
     local char = self.LocalPlayer.Character
     if not char then return end
@@ -158,6 +146,8 @@ function utility:startVelocityWatcher(callback)
     if not hrp then return end
     
     local connection
+    local lastPos = hrp.Position
+    
     connection = utility.RunService.Heartbeat:Connect(function()
         if not utility.eggEnabled then
             connection:Disconnect()
@@ -175,11 +165,17 @@ function utility:startVelocityWatcher(callback)
         
         local velocity = currentHRP.AssemblyLinearVelocity
         local speed = velocity.Magnitude
+        local posDelta = (currentHRP.Position - lastPos).Magnitude
+        local verticalVel = math.abs(velocity.Y)
         
-        if speed > getgenv().config.knockbackThreshold then
+        if speed > getgenv().config.knockbackThreshold 
+           or posDelta > 2 
+           or verticalVel > 20 then
             connection:Disconnect()
             callback()
         end
+        
+        lastPos = currentHRP.Position
     end)
     
     return connection
@@ -207,7 +203,7 @@ function utility:initEgg()
 end
 
 -- ============================================
--- STEP 6: LENNON STYLE AUTO EGG (balanced)
+-- STEP 6: LENNON STYLE AUTO EGG (MoveTo-based)
 -- ============================================
 function utility:startEgg()
     if self.eggConn then pcall(function() task.cancel(self.eggConn) end) end
@@ -222,13 +218,13 @@ function utility:startEgg()
                 
                 -- STEP 1: May dala? → base
                 if hasEgg then
-                    self:TeleportTo(getgenv().config.basePos)
+                    self:GoTo({BoundsCFrame = CFrame.new(getgenv().config.basePos)})
                     task.wait(getgenv().config.teleportDelay)
                 else
                     -- STEP 2: Wala pa → chicken egg
                     local chickenEgg = self:getChickenEgg()
                     if chickenEgg then
-                        self:TeleportTo(chickenEgg.BoundsCFrame.Position)
+                        self:GoTo(chickenEgg)
                         task.wait(getgenv().config.teleportDelay)
                         
                         local p = self:getproximitypromptforegg(chickenEgg)
@@ -251,13 +247,13 @@ function utility:startEgg()
                         
                         if conn then conn:Disconnect() end
                         
-                        -- STEP 4: Pag na-tuka → balanced teleport
+                        -- STEP 4: Pag na-tuka → best egg (MoveTo)
                         if pecked then
                             task.wait(getgenv().config.peckSettleDelay)
                             
                             local bestEgg = self:getBestEgg()
                             if bestEgg then
-                                self:TeleportTo(bestEgg.BoundsCFrame.Position)
+                                self:GoTo(bestEgg)
                                 task.wait(getgenv().config.teleportDelay)
                                 
                                 local bp = self:getproximitypromptforegg(bestEgg)
@@ -267,7 +263,7 @@ function utility:startEgg()
                                 task.wait(getgenv().config.grabDelay)
                                 
                                 -- Dalhin sa base
-                                self:TeleportTo(getgenv().config.basePos)
+                                self:GoTo({BoundsCFrame = CFrame.new(getgenv().config.basePos)})
                                 task.wait(getgenv().config.teleportDelay)
                             end
                         end
