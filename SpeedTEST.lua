@@ -36,7 +36,7 @@ getgenv().config = {
     teleportDelay = 0.4,
     grabDelay = 0.4,
     peckSettleDelay = 0.15,
-    closeDistance = 10,
+    closeDistance = 15,
 }
 
 -- ============================================
@@ -95,7 +95,7 @@ function utility:TeleportTo(pos)
     end)
 end
 
--- 🚀 STEADY MoveTo (CFrame-based, walang bounce)
+-- 🌊 STEADY MoveTo with smooth raise transition
 function utility:GoTo(pos, shouldRaise)
     pcall(function(...)
         local dist = math.huge
@@ -112,17 +112,17 @@ function utility:GoTo(pos, shouldRaise)
             local start = hrp.Position
             dist = (targetPos - start).Magnitude
             
+            -- 🌊 SMOOTH raise transition (walang bounce)
             local currentRaise = raiseAmount
             if dist < getgenv().config.closeDistance then
-                currentRaise = 0
+                local fadePercent = dist / getgenv().config.closeDistance
+                currentRaise = raiseAmount * fadePercent
             end
             
-            -- 🚀 CFrame-based movement (steady, walang bounce)
-            local direction = (targetPos - start).Unit
-            local newPos = start + direction * dt * getgenv().config.moveSpeed
-            newPos = Vector3.new(newPos.X, start.Y + currentRaise, newPos.Z)
-            
-            hrp.CFrame = CFrame.new(newPos, newPos + direction)
+            -- MoveTo (physics-based, safe)
+            local half = start + (targetPos - start).Unit * dt * getgenv().config.moveSpeed
+            half = half + Vector3.new(0, currentRaise, 0)
+            char:MoveTo(half)
         until dist <= 3
     end)
 end
@@ -163,6 +163,7 @@ function utility:hasEgg()
     return false
 end
 
+-- ⚡ VELOCITY WATCHER (peck detection)
 function utility:startVelocityWatcher(callback)
     local char = self.LocalPlayer.Character
     if not char then return end
@@ -227,7 +228,7 @@ function utility:initEgg()
 end
 
 -- ============================================
--- STEP 6: HYBRID AUTO EGG (steady move)
+-- STEP 6: HYBRID AUTO EGG (smooth move)
 -- ============================================
 function utility:startEgg()
     if self.eggConn then pcall(function() task.cancel(self.eggConn) end) end
@@ -271,7 +272,7 @@ function utility:startEgg()
                         
                         if conn then conn:Disconnect() end
                         
-                        -- STEP 4: Pag na-tuka → STEADY MoveTo best egg
+                        -- STEP 4: Pag na-tuka → Smooth MoveTo best egg
                         if pecked then
                             task.wait(getgenv().config.peckSettleDelay)
                             
@@ -426,7 +427,7 @@ local function createUI()
     end
 
     local speedToggle = makeToggle(50, "Speed Bypass", "⚡")
-    local eggToggle = makeToggle(95, "Auto Steal (Steady)", "🥚")
+    local eggToggle = makeToggle(95, "Auto Steal (Smooth)", "🥚")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
@@ -529,7 +530,7 @@ task.spawn(function()
     utility.eggReady = eggOK
 
     if eggOK then
-        ui.Status.Text = "Status: ✅ Ready (Steady Move)"
+        ui.Status.Text = "Status: ✅ Ready (Smooth)"
         ui.Status.TextColor3 = COLORS.GREEN
     else
         ui.Status.Text = "Status: ❌ Egg init failed"
