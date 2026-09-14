@@ -18,7 +18,7 @@ local State = {
     farmEnabled  = false,
     speedValue   = 700,        -- ⚡ Speed Hack
     minArea      = 9,          -- 🎯 Best egg area (9+)
-    tweenSpeed   = 450,        -- 🐢 Farm movement speed
+    tweenSpeed   = 300,        -- 🐢 Farm movement speed
 }
 
 local START_POS = Vector3.new(519.155, 70.576, -356.103)
