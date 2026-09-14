@@ -26,11 +26,11 @@ utility.areas = {
 }
 
 getgenv().config = {
-    speedValue = 400,
+    speedValue = 250,           -- ⚡ 250 para mabilis ma-tuka
     basePos = Vector3.new(514, 71, -368),
-    chickenAreas = 3,      -- Areas 1-3 = chicken eggs
-    minArea = 9,           -- Minimum area para sa best egg
-    peckWaitTime = 3,      -- Max seconds na hintayin yung tuka
+    chickenAreas = 3,           -- Areas 1-3 = chicken
+    minArea = 9,                -- Best egg = area 9+
+    knockbackThreshold = 25,    -- Sensitivity ng tuka detection
 }
 
 -- ============================================
@@ -147,42 +147,39 @@ function utility:hasEgg()
     return false
 end
 
--- Detect kung na-tuka na ng chicken
-function utility:isBeingPecked()
-    local s, r = pcall(function(...)
-        local char = self.LocalPlayer.Character
-        if not char then return false end
-        
-        -- Check kung may chicken na malapit sa character
-        for _, obj in next, self.Workspace:GetDescendants() do
-            if obj.Name:lower():find("chicken") and obj:IsA("Model") then
-                local chickenHRP = obj:FindFirstChild("HumanoidRootPart")
-                if chickenHRP then
-                    local dist = (chickenHRP.Position - char.HumanoidRootPart.Position).Magnitude
-                    if dist < 5 then  -- Malapit na chicken
-                        return true
-                    end
-                end
-            end
-        end
-        return false
-    end)
-    if s and r then return r end
-    return false
-end
-
--- Check kung may health damage (na-tuka)
-function utility:wasPecked()
+-- ⚡ VELOCITY-BASED PECK DETECTION
+function utility:startVelocityWatcher(callback)
     local char = self.LocalPlayer.Character
-    if not char then return false end
-    local hum = char:FindFirstChild("Humanoid")
-    if not hum then return false end
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
     
-    -- Kung bumaba health from max, na-tuka na
-    if hum.Health < hum.MaxHealth then
-        return true
-    end
-    return false
+    local connection
+    connection = utility.RunService.Heartbeat:Connect(function()
+        if not utility.eggEnabled then
+            connection:Disconnect()
+            return
+        end
+        
+        local currentChar = utility.LocalPlayer.Character
+        if not currentChar then
+            connection:Disconnect()
+            return
+        end
+        
+        local currentHRP = currentChar:FindFirstChild("HumanoidRootPart")
+        if not currentHRP then return end
+        
+        local velocity = currentHRP.AssemblyLinearVelocity
+        local speed = velocity.Magnitude
+        
+        if speed > getgenv().config.knockbackThreshold then
+            connection:Disconnect()
+            callback()
+        end
+    end)
+    
+    return connection
 end
 
 -- ============================================
@@ -207,7 +204,7 @@ function utility:initEgg()
 end
 
 -- ============================================
--- STEP 6: LENNON STYLE AUTO EGG (with peck trigger)
+-- STEP 6: LENNON STYLE AUTO EGG
 -- ============================================
 function utility:startEgg()
     if self.eggConn then pcall(function() task.cancel(self.eggConn) end) end
@@ -220,7 +217,7 @@ function utility:startEgg()
                 
                 local hasEgg = self:hasEgg()
                 
-                -- STEP 1: Kung may dala → dalhin sa base
+                -- STEP 1: May dala? → base
                 if hasEgg then
                     self:TeleportTo(getgenv().config.basePos)
                     task.wait(0.5)
@@ -236,19 +233,21 @@ function utility:startEgg()
                             pcall(function() fireproximityprompt(p, 0, true) end)
                         end
                         
-                        -- STEP 3: Hintayin na tukaan ng chicken
-                        local waitTime = 0
+                        -- STEP 3: Hintayin TUKA (velocity trigger)
                         local pecked = false
-                        while waitTime < getgenv().config.peckWaitTime do
-                            if self:wasPecked() or self:isBeingPecked() then
-                                pecked = true
-                                break
-                            end
+                        local conn = self:startVelocityWatcher(function()
+                            pecked = true
+                        end)
+                        
+                        local waitTime = 0
+                        while waitTime < 5 and not pecked do
                             task.wait(0.1)
                             waitTime = waitTime + 0.1
                         end
                         
-                        -- STEP 4: Pag na-tuka → teleport sa best egg
+                        if conn then conn:Disconnect() end
+                        
+                        -- STEP 4: Pag na-tuka → best egg → kunin → base
                         if pecked then
                             local bestEgg = self:getBestEgg()
                             if bestEgg then
@@ -308,8 +307,8 @@ local function createUI()
     ScreenGui.Parent = utility.CoreGui
 
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 280, 0, 220)
-    Main.Position = UDim2.new(0.5, -140, 0.5, -110)
+    Main.Size = UDim2.new(0, 280, 0, 180)
+    Main.Position = UDim2.new(0.5, -140, 0.5, -90)
     Main.BackgroundColor3 = COLORS.BG
     Main.BorderSizePixel = 0
     Main.Active = true
@@ -405,7 +404,7 @@ local function createUI()
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
-    Status.Position = UDim2.new(0, 15, 0, 180)
+    Status.Position = UDim2.new(0, 15, 0, 145)
     Status.BackgroundTransparency = 1
     Status.Text = "Status: Ready"
     Status.TextColor3 = Color3.fromRGB(255, 200, 0)
@@ -504,7 +503,7 @@ task.spawn(function()
     utility.eggReady = eggOK
 
     if eggOK then
-        ui.Status.Text = "Status: ✅ Ready (Lennon Style)"
+        ui.Status.Text = "Status: ✅ Ready"
         ui.Status.TextColor3 = COLORS.GREEN
     else
         ui.Status.Text = "Status: ❌ Egg init failed"
