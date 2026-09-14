@@ -26,13 +26,13 @@ utility.areas = {
 }
 
 getgenv().config = {
-    speedValue = 265,
+    speedValue = 260,
     basePos = Vector3.new(514, 71, -368),
     chickenAreas = 3,
     minArea = 9,
     knockbackThreshold = 15,
-    moveSpeed = 400,           -- 🚀 MoveTo speed (para sa best egg at base)
-    characterRaise = 3,        -- 🦘 +3 studs habang nag-mo-move
+    moveSpeed = 400,
+    characterRaise = 2,
     teleportDelay = 0.4,
     grabDelay = 0.4,
     peckSettleDelay = 0.15,
@@ -84,7 +84,7 @@ function utility:getBestEgg()
     return nil
 end
 
--- 🚀 TELEPORT (instant, para sa chicken egg)
+-- ⚡ TELEPORT (instant, safe sa chicken)
 function utility:TeleportTo(pos)
     local char = self.LocalPlayer.Character
     if not char then return end
@@ -95,7 +95,7 @@ function utility:TeleportTo(pos)
     end)
 end
 
--- 🚀 MoveTo-based GoTo (para sa best egg at base)
+-- 🚀 STEADY MoveTo (CFrame-based, walang bounce)
 function utility:GoTo(pos, shouldRaise)
     pcall(function(...)
         local dist = math.huge
@@ -117,9 +117,12 @@ function utility:GoTo(pos, shouldRaise)
                 currentRaise = 0
             end
             
-            local half = start + (targetPos - start).Unit * dt * getgenv().config.moveSpeed
-            half = half + Vector3.new(0, currentRaise, 0)
-            char:MoveTo(half)
+            -- 🚀 CFrame-based movement (steady, walang bounce)
+            local direction = (targetPos - start).Unit
+            local newPos = start + direction * dt * getgenv().config.moveSpeed
+            newPos = Vector3.new(newPos.X, start.Y + currentRaise, newPos.Z)
+            
+            hrp.CFrame = CFrame.new(newPos, newPos + direction)
         until dist <= 3
     end)
 end
@@ -224,7 +227,7 @@ function utility:initEgg()
 end
 
 -- ============================================
--- STEP 6: HYBRID AUTO EGG
+-- STEP 6: HYBRID AUTO EGG (steady move)
 -- ============================================
 function utility:startEgg()
     if self.eggConn then pcall(function() task.cancel(self.eggConn) end) end
@@ -237,15 +240,15 @@ function utility:startEgg()
                 
                 local hasEgg = self:hasEgg()
                 
-                -- STEP 1: May dala? → MoveTo base
+                -- STEP 1: May dala? → base
                 if hasEgg then
                     self:GoTo({BoundsCFrame = CFrame.new(getgenv().config.basePos)}, true)
                     task.wait(getgenv().config.teleportDelay)
                 else
-                    -- STEP 2: Wala pa → TELEPORT sa chicken egg
+                    -- STEP 2: Wala pa → TELEPORT sa chicken
                     local chickenEgg = self:getChickenEgg()
                     if chickenEgg then
-                        self:TeleportTo(chickenEgg)  -- ⚡ TELEPORT!
+                        self:TeleportTo(chickenEgg)
                         task.wait(getgenv().config.teleportDelay)
                         
                         local p = self:getproximitypromptforegg(chickenEgg)
@@ -268,13 +271,13 @@ function utility:startEgg()
                         
                         if conn then conn:Disconnect() end
                         
-                        -- STEP 4: Pag na-tuka → MoveTo best egg
+                        -- STEP 4: Pag na-tuka → STEADY MoveTo best egg
                         if pecked then
                             task.wait(getgenv().config.peckSettleDelay)
                             
                             local bestEgg = self:getBestEgg()
                             if bestEgg then
-                                self:GoTo(bestEgg, true)  -- 🚀 MoveTo 400x
+                                self:GoTo(bestEgg, true)
                                 task.wait(getgenv().config.teleportDelay)
                                 
                                 local bp = self:getproximitypromptforegg(bestEgg)
@@ -283,7 +286,7 @@ function utility:startEgg()
                                 end
                                 task.wait(getgenv().config.grabDelay)
                                 
-                                -- Dalhin sa base (MoveTo)
+                                -- Dalhin sa base
                                 self:GoTo({BoundsCFrame = CFrame.new(getgenv().config.basePos)}, true)
                                 task.wait(getgenv().config.teleportDelay)
                             end
@@ -423,7 +426,7 @@ local function createUI()
     end
 
     local speedToggle = makeToggle(50, "Speed Bypass", "⚡")
-    local eggToggle = makeToggle(95, "Auto Steal (Hybrid)", "🥚")
+    local eggToggle = makeToggle(95, "Auto Steal (Steady)", "🥚")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
@@ -526,7 +529,7 @@ task.spawn(function()
     utility.eggReady = eggOK
 
     if eggOK then
-        ui.Status.Text = "Status: ✅ Ready (Hybrid)"
+        ui.Status.Text = "Status: ✅ Ready (Steady Move)"
         ui.Status.TextColor3 = COLORS.GREEN
     else
         ui.Status.Text = "Status: ❌ Egg init failed"
