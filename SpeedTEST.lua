@@ -1,10 +1,11 @@
 -- ============================================================
--- STEAL AN EGG — Speed + Auto Farm Best Egg
+-- STEAL AN EGG — FAST Auto Farm Best Egg
 -- ============================================================
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService        = game:GetService("RunService")
+local TweenService      = game:GetService("TweenService")
 local Workspace         = game:GetService("Workspace")
 local CoreGui           = game:GetService("CoreGui")
 local LocalPlayer       = Players.LocalPlayer
@@ -15,10 +16,18 @@ local LocalPlayer       = Players.LocalPlayer
 local State = {
     speedEnabled = false,
     farmEnabled  = false,
-    speedValue   = 300,
+    speedValue   = 400,
+    minArea      = 9,
+    tweenSpeed   = 1200,       -- 🚀 FAST tween speed (studs/sec)
 }
 
 local START_POS = Vector3.new(519.155, 70.576, -356.103)
+
+local AREA_NAMES = {
+    "Forest", "Lake", "Desert", "Jungle", "Snow",
+    "Volcano", "Abyss Ocean", "Prehistoric", "Cosmic",
+    "Cherry Blossom", "Titan Temple",
+}
 
 -- ============================================================
 -- SPEED BYPASS (TAMANG LINE: 3)
@@ -50,7 +59,6 @@ local function initSpeedBypass()
         return ok and r or nil
     end
     
-    -- 🎯 TAMANG LINE: 3 (hindi 605!)
     local func3 = findFn(19, 3)
     if not func3 then warn("[Speed] func3 not found"); return false end
     
@@ -73,7 +81,7 @@ local function initSpeedBypass()
     end)
     if not ok then warn("[Speed] hook failed:", tostring(err)); return false end
     
-    print("[Speed] OK - bypass active")
+    print("[Speed] OK")
     _speedActive = true
     return true
 end
@@ -134,41 +142,51 @@ local function getHum()
     return c and c:FindFirstChildOfClass("Humanoid")
 end
 
-local function getRarityName(rec)
-    if rec and rec.Rarity then
-        if type(rec.Rarity) == "table" and rec.Rarity._id then
-            return rec.Rarity._id
-        end
-        if type(rec.Rarity) == "string" then return rec.Rarity end
+local function getRarityNumber(rec)
+    if rec and rec.Rarity and type(rec.Rarity) == "table" then
+        return rec.Rarity.RarityNumber or 0
     end
-    return "Unknown"
+    return 0
+end
+
+local function getAssetScale(rec)
+    return tonumber(rec.AssetScale) or 1
 end
 
 -- ============================================================
--- FIND BEST EGG
+-- 🎯 FIND BEST EGG
 -- ============================================================
 local function findBestEgg()
     if not EggState then return nil, nil end
     local ok, fieldEggs = pcall(function() return EggState.ReadFieldEggs() end)
     if not ok or not fieldEggs or not fieldEggs.Records then return nil, nil end
 
-    local bestRec, bestModel, bestDist = nil, nil, math.huge
-    local r = getHRP()
-    if not r then return nil, nil end
+    local bestRec, bestModel = nil, nil
+    local bestScore = -1
 
     for _, rec in ipairs(fieldEggs.Records) do
         if rec.State == "Slot" or rec.State == "Dropped" then
-            local model = Workspace:FindFirstChild("AreaEggSlotsClient", true)
-                and Workspace.AreaEggSlotsClient:FindFirstChild(rec.Uid)
-                or Workspace:FindFirstChild(rec.Uid, true)
-            if model then
-                local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
-                if part then
-                    local d = (part.Position - r.Position).Magnitude
-                    if d < bestDist then
-                        bestDist = d
-                        bestRec = rec
-                        bestModel = model
+            local areaIdx = nil
+            for i, name in ipairs(AREA_NAMES) do
+                if rec.AreaId == name then areaIdx = i; break end
+            end
+            
+            if areaIdx and areaIdx >= State.minArea then
+                local model = Workspace:FindFirstChild("AreaEggSlotsClient", true)
+                    and Workspace.AreaEggSlotsClient:FindFirstChild(rec.Uid)
+                    or Workspace:FindFirstChild(rec.Uid, true)
+                if model then
+                    local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+                    if part then
+                        local rarityNum = getRarityNumber(rec)
+                        local scale = getAssetScale(rec)
+                        local score = (rarityNum * 1000) + scale
+                        
+                        if score > bestScore then
+                            bestScore = score
+                            bestRec = rec
+                            bestModel = model
+                        end
                     end
                 end
             end
@@ -178,33 +196,48 @@ local function findBestEgg()
 end
 
 -- ============================================================
--- WALK TO
+-- 🚀 FAST TWEEN MOVE (instant-like)
 -- ============================================================
-local function walkTo(pos, timeout)
-    local h2 = getHum()
-    local r = getHRP()
-    if not h2 or not r then return false end
+local function fastTweenTo(targetPos, timeout)
+    local char = LocalPlayer.Character
+    local hrp = getHRP()
+    if not char or not hrp then return false end
     
-    timeout = timeout or 20
-    if (r.Position - pos).Magnitude <= 5 then return true end
+    timeout = timeout or 8
+    if (hrp.Position - targetPos).Magnitude <= 5 then return true end
     
-    if _speedActive then startSpeed(State.speedValue) end
-    h2:MoveTo(pos)
+    -- 🚀 Tween-based movement (fast, steady)
+    local dist = (targetPos - hrp.Position).Magnitude
+    local tweenTime = math.max(dist / State.tweenSpeed, 0.05)
     
+    local tween = TweenService:Create(
+        hrp,
+        TweenInfo.new(tweenTime, Enum.EasingStyle.Linear),
+        { CFrame = CFrame.new(targetPos) }
+    )
+    
+    local done = false
+    tween.Completed:Connect(function()
+        done = true
+    end)
+    
+    tween:Play()
+    
+    -- Wait for tween or timeout
     local t0 = tick()
-    while tick() - t0 < timeout do
-        if not State.farmEnabled then break end
-        task.wait(0.05)
-        r = getHRP(); h2 = getHum()
-        if not r or not h2 then break end
-        if (r.Position - pos).Magnitude <= 5 then break end
-        h2:MoveTo(pos)
+    while not done and tick() - t0 < timeout do
+        if not State.farmEnabled then 
+            tween:Cancel()
+            break 
+        end
+        task.wait(0.01)
     end
+    
     return true
 end
 
 -- ============================================================
--- FARM CYCLE
+-- 🚀 FAST FARM CYCLE
 -- ============================================================
 local function farmCycle()
     if not State.farmEnabled then return end
@@ -212,17 +245,18 @@ local function farmCycle()
 
     local rec, model = findBestEgg()
     if not rec or not model then
+        task.wait(0.3)
         return
     end
 
     local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
     if not part then return end
 
-    -- Walk to egg
-    walkTo(part.Position, 15)
+    -- 🚀 Fast tween to egg
+    fastTweenTo(part.Position, 8)
     if not State.farmEnabled then return end
 
-    task.wait(0.3)
+    task.wait(0.1)
 
     -- Grab
     pcall(function() EggState.CarryFieldEgg(rec.Uid) end)
@@ -235,11 +269,11 @@ local function farmCycle()
         end)
     end
 
-    task.wait(0.5)
+    task.wait(0.1)
 
-    -- Return to base
-    walkTo(START_POS, 15)
-    task.wait(0.5)
+    -- 🚀 Fast tween back to base
+    fastTweenTo(START_POS, 8)
+    task.wait(0.1)
 end
 
 -- ============================================================
@@ -279,7 +313,6 @@ local function createUI()
     local s1 = Instance.new("UIStroke", Main)
     s1.Color = COLORS.STROKE
 
-    -- Title bar
     local TitleBar = Instance.new("Frame", Main)
     TitleBar.Size = UDim2.new(1, 0, 0, 35)
     TitleBar.BackgroundColor3 = COLORS.TITLE_BG
@@ -296,7 +329,7 @@ local function createUI()
     Title.Size = UDim2.new(1, -50, 1, 0)
     Title.Position = UDim2.new(0, 12, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "🥚 Steal An Egg"
+    Title.Text = "🥚 Steal An Egg — FAST"
     Title.TextColor3 = COLORS.TEXT
     Title.TextSize = 13
     Title.Font = Enum.Font.GothamBold
@@ -312,7 +345,6 @@ local function createUI()
     CloseBtn.Font = Enum.Font.GothamBold
     Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
 
-    -- Toggle maker
     local function makeToggle(y, label, icon)
         local lbl = Instance.new("TextLabel", Main)
         lbl.Size = UDim2.new(1, -120, 0, 25)
@@ -357,8 +389,8 @@ local function createUI()
         return {track = track, knob = knob, state = state, btn = btn}
     end
 
-    local speedToggle = makeToggle(50, "Speed Bypass", "⚡")
-    local farmToggle = makeToggle(95, "Auto Farm Best", "🎯")
+    local speedToggle = makeToggle(50, "Speed Bypass (400)", "⚡")
+    local farmToggle = makeToggle(95, "FAST Auto Farm", "🚀")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
@@ -377,9 +409,6 @@ local function createUI()
     }
 end
 
--- ============================================================
--- WIRING
--- ============================================================
 local ui = createUI()
 
 local function setToggle(t, on)
@@ -389,7 +418,6 @@ local function setToggle(t, on)
     t.state.TextColor3 = on and COLORS.GREEN or COLORS.RED
 end
 
--- Speed toggle
 ui.speedToggle.btn.MouseButton1Click:Connect(function()
     State.speedEnabled = not State.speedEnabled
     setToggle(ui.speedToggle, State.speedEnabled)
@@ -412,10 +440,8 @@ ui.speedToggle.btn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Farm toggle
 ui.farmToggle.btn.MouseButton1Click:Connect(function()
     if not State.farmEnabled then
-        -- Starting
         if not loadModules() then
             ui.Status.Text = "Status: ❌ EggState not found"
             ui.Status.TextColor3 = COLORS.RED
@@ -423,20 +449,19 @@ ui.farmToggle.btn.MouseButton1Click:Connect(function()
         end
         State.farmEnabled = true
         setToggle(ui.farmToggle, true)
-        ui.Status.Text = "Status: 🎯 Auto Farm ON"
+        ui.Status.Text = "Status: 🚀 FAST Farm ON"
         ui.Status.TextColor3 = COLORS.GREEN
         
         task.spawn(function()
             while State.farmEnabled do
                 pcall(farmCycle)
-                task.wait(0.2)
+                task.wait(0.05)  -- 🚀 Sobrang mabilis na cycle
             end
         end)
     else
-        -- Stopping
         State.farmEnabled = false
         setToggle(ui.farmToggle, false)
-        ui.Status.Text = "Status: 🎯 Auto Farm OFF"
+        ui.Status.Text = "Status: 🚀 FAST Farm OFF"
         ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
     end
 end)
@@ -448,9 +473,8 @@ ui.CloseBtn.MouseButton1Click:Connect(function()
     ui.ScreenGui:Destroy()
 end)
 
--- Init status
 if speedReady then
-    ui.Status.Text = "Status: ✅ Ready (Speed ready)"
+    ui.Status.Text = "Status: ✅ Ready (FAST)"
     ui.Status.TextColor3 = COLORS.GREEN
 else
     ui.Status.Text = "Status: ⚠️ Speed bypass failed"
