@@ -23,8 +23,6 @@ local utility = {
 -- ============================================
 getgenv().config = {
     speedValue = 260,
-    autoGrabRadius = 30,
-    positionFallbackRadius = 15,
 }
 
 -- ============================================
@@ -148,137 +146,22 @@ function utility:stopAntiRagdoll()
 end
 
 -- ============================================
--- STEP 7: AUTO-GRAB DROPPED EGG
--- ============================================
-utility.autoGrabEnabled = false
-utility.autoGrabConn = nil
-utility.lastEggUid = nil
-utility.lastEggPos = nil
-utility.grabCooldown = 0
-
-function utility:getCurrentEggUid()
-    local char = self.LocalPlayer.Character
-    if not char then return nil end
-    for _, tool in next, char:GetChildren() do
-        if tool:IsA("Tool") and tool:GetAttribute("ItemType") == "AssetEgg" then
-            return tool:GetAttribute("UID") or tool:GetAttribute("Uid")
-        end
-    end
-    return nil
-end
-
-function utility:startAutoGrab()
-    self.LocalPlayer = self.Players.LocalPlayer
-    if not self.LocalPlayer then return false, "No LocalPlayer" end
-    if not fireproximityprompt then return false, "Missing fireproximityprompt" end
-
-    utility.lastEggUid = nil
-    utility.lastEggPos = nil
-    utility.grabCooldown = 0
-
-    utility.autoGrabConn = self.RunService.Heartbeat:Connect(function()
-        if not utility.autoGrabEnabled then return end
-
-        local now = tick()
-        if now < utility.grabCooldown then return end
-
-        local char = self.LocalPlayer.Character
-        if not char then return end
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-
-        local currentUid = utility:getCurrentEggUid()
-
-        if currentUid then
-            utility.lastEggUid = currentUid
-            utility.lastEggPos = hrp.Position
-            return
-        end
-
-        if not utility.lastEggUid then return end
-
-        local myPos = hrp.Position
-        local closestPrompt = nil
-        local closestDist = getgenv().config.autoGrabRadius
-
-        for _, obj in next, self.Workspace:GetDescendants() do
-            if obj:IsA("BasePart") and obj.Name:lower():find("egg") then
-                local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt")
-                if not prompt and obj.Parent then
-                    prompt = obj.Parent:FindFirstChildWhichIsA("ProximityPrompt")
-                    if not prompt and obj.Parent.Parent then
-                        prompt = obj.Parent.Parent:FindFirstChildWhichIsA("ProximityPrompt")
-                    end
-                end
-
-                if prompt then
-                    local eggUid = obj:GetAttribute("UID") 
-                        or obj:GetAttribute("Uid")
-                        or (obj.Parent and (obj.Parent:GetAttribute("UID") or obj.Parent:GetAttribute("Uid")))
-                    
-                    local matchUid = false
-                    if eggUid and utility.lastEggUid then
-                        matchUid = tostring(eggUid) == tostring(utility.lastEggUid)
-                    end
-
-                    local matchPos = false
-                    if utility.lastEggPos then
-                        local distFromDrop = (obj.Position - utility.lastEggPos).Magnitude
-                        matchPos = distFromDrop <= getgenv().config.positionFallbackRadius
-                    end
-
-                    if matchUid or matchPos then
-                        local dist = (obj.Position - myPos).Magnitude
-                        if dist < closestDist then
-                            closestDist = dist
-                            closestPrompt = prompt
-                        end
-                    end
-                end
-            end
-        end
-
-        if closestPrompt then
-            pcall(function()
-                closestPrompt.HoldDuration = 0
-                fireproximityprompt(closestPrompt, 0)
-            end)
-            print("[AutoGrab] ✅ Grabbed YOUR dropped egg at " .. math.floor(closestDist) .. " studs")
-            utility.grabCooldown = tick() + 0.5
-        end
-    end)
-
-    return true
-end
-
-function utility:stopAutoGrab()
-    if utility.autoGrabConn then
-        utility.autoGrabConn:Disconnect()
-        utility.autoGrabConn = nil
-    end
-    utility.lastEggUid = nil
-    utility.lastEggPos = nil
-    utility.grabCooldown = 0
-end
-
--- ============================================
--- STEP 8: ANTI-TRAP (NEW!)
+-- STEP 7: ANTI-TRAP (FIXED — PlayerTrap destroy)
 -- ============================================
 utility.antiTrapEnabled = false
 utility.antiTrapConn = nil
-utility.origCanTouch = {}
+utility.trapConns = {}
 
-function utility:disableGuardTouch()
-    for _, obj in next, self.Workspace:GetDescendants() do
-        if obj:IsA("BasePart") and obj.CanTouch then
-            local name = obj.Name:lower()
-            local parentName = obj.Parent and obj.Parent.Name:lower() or ""
-            if name:find("guard") or parentName:find("guard") then
-                if utility.origCanTouch[obj] == nil then
-                    utility.origCanTouch[obj] = obj.CanTouch
-                end
-                obj.CanTouch = false
-            end
+function utility:destroyTraps()
+    -- Hanapin yung __DEBRIS folder
+    local debris = self.Workspace:FindFirstChild("__DEBRIS")
+    if not debris then return end
+
+    -- Hanapin lahat ng PlayerTrap
+    for _, obj in next, debris:GetChildren() do
+        if obj.Name == "PlayerTrap" then
+            pcall(function() obj:Destroy() end)
+            print("[AntiTrap] ✅ Destroyed PlayerTrap")
         end
     end
 end
@@ -287,29 +170,50 @@ function utility:startAntiTrap()
     self.LocalPlayer = self.Players.LocalPlayer
     if not self.LocalPlayer then return false, "No LocalPlayer" end
 
-    -- 1. Disable AntiAFK script
-    pcall(function()
-        local ps = self.LocalPlayer:FindFirstChild("PlayerScripts")
-        local gameFolder = ps and ps:FindFirstChild("Game")
-        local antiAfk = gameFolder and gameFolder:FindFirstChild("AntiAFK")
-        if antiAfk then antiAfk:Destroy() end
-    end)
+    -- 1. Initial destroy ng existing traps
+    self:destroyTraps()
 
-    -- 2. Initial guard touch disable
-    self:disableGuardTouch()
+    -- 2. Watch __DEBRIS folder — destroy agad pag may bagong trap
+    local debris = self.Workspace:FindFirstChild("__DEBRIS")
+    if debris then
+        table.insert(utility.trapConns, debris.ChildAdded:Connect(function(child)
+            if utility.antiTrapEnabled and child.Name == "PlayerTrap" then
+                pcall(function() child:Destroy() end)
+                print("[AntiTrap] ✅ Destroyed new PlayerTrap")
+            end
+        end))
+    end
 
-    -- 3. Continuous loop — re-disable kung nag-re-enable yung game
+    -- 3. Watch Workspace — kung mag-appear yung __DEBRIS folder
+    table.insert(utility.trapConns, self.Workspace.ChildAdded:Connect(function(child)
+        if utility.antiTrapEnabled and child.Name == "__DEBRIS" then
+            child.ChildAdded:Connect(function(trap)
+                if utility.antiTrapEnabled and trap.Name == "PlayerTrap" then
+                    pcall(function() trap:Destroy() end)
+                end
+            end)
+        end
+    end))
+
+    -- 4. Continuous loop — re-destroy kung may naka-plant na trap
     utility.antiTrapConn = self.RunService.Heartbeat:Connect(function()
         if not utility.antiTrapEnabled then return end
+        self:destroyTraps()
 
-        -- Re-disable guard touch
-        self:disableGuardTouch()
-
-        -- Anti-ragdoll: keep getting up
+        -- 5. Anti-ragdoll / anti-getup
         local char = self.LocalPlayer.Character
         if not char then return end
         local hum = char:FindFirstChildOfClass("Humanoid")
         if not hum then return end
+
+        -- Check kung naka-trap (IsTrapped attribute)
+        if char:GetAttribute("IsTrapped") == true then
+            -- Force getup
+            pcall(function()
+                hum.PlatformStand = false
+                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end)
+        end
 
         if hum.PlatformStand then
             pcall(function() hum.PlatformStand = false end)
@@ -318,13 +222,13 @@ function utility:startAntiTrap()
         local state = hum:GetState()
         if state == Enum.HumanoidStateType.Physics or
            state == Enum.HumanoidStateType.Ragdoll or
-           state == Enum.HumanoidStateType.FallingDown then
+           state == Enum.HumanoidStateType.FallingDown or
+           state == Enum.HumanoidStateType.PlatformStanding then
             pcall(function()
                 hum:ChangeState(Enum.HumanoidStateType.GettingUp)
             end)
         end
 
-        -- Restore Motor6D
         for _, joint in next, char:GetDescendants() do
             if joint:IsA("Motor6D") and joint.Enabled == false then
                 pcall(function() joint.Enabled = true end)
@@ -340,17 +244,14 @@ function utility:stopAntiTrap()
         utility.antiTrapConn:Disconnect()
         utility.antiTrapConn = nil
     end
-    -- Restore CanTouch
-    for obj, val in next, utility.origCanTouch do
-        if obj and obj.Parent then
-            pcall(function() obj.CanTouch = val end)
-        end
+    for _, conn in next, utility.trapConns do
+        pcall(function() conn:Disconnect() end)
     end
-    utility.origCanTouch = {}
+    utility.trapConns = {}
 end
 
 -- ============================================
--- STEP 9: UI
+-- STEP 8: UI
 -- ============================================
 local COLORS = {
     BG = Color3.fromRGB(25, 25, 30),
@@ -374,8 +275,8 @@ local function createUI()
     ScreenGui.Parent = utility.CoreGui
 
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 260, 0, 310)
-    Main.Position = UDim2.new(0.5, -130, 0.5, -155)
+    Main.Size = UDim2.new(0, 260, 0, 265)
+    Main.Position = UDim2.new(0.5, -130, 0.5, -132)
     Main.BackgroundColor3 = COLORS.BG
     Main.BorderSizePixel = 0
     Main.Active = true
@@ -469,12 +370,11 @@ local function createUI()
     local speedToggle = makeToggle(50, "Speed Bypass", "⚡")
     local pickupToggle = makeToggle(95, "Instant Pickup", "⚡")
     local ragdollToggle = makeToggle(140, "Anti-Ragdoll", "🛡️")
-    local autoGrabToggle = makeToggle(185, "Auto-Grab My Drop", "🥚")
-    local antiTrapToggle = makeToggle(230, "Anti-Trap", "🪤")
+    local antiTrapToggle = makeToggle(185, "Anti-Trap", "🪤")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
-    Status.Position = UDim2.new(0, 15, 0, 275)
+    Status.Position = UDim2.new(0, 15, 0, 230)
     Status.BackgroundTransparency = 1
     Status.Text = "Status: Ready"
     Status.TextColor3 = Color3.fromRGB(255, 200, 0)
@@ -485,14 +385,13 @@ local function createUI()
     return {
         ScreenGui = ScreenGui, Main = Main,
         speedToggle = speedToggle, pickupToggle = pickupToggle,
-        ragdollToggle = ragdollToggle, autoGrabToggle = autoGrabToggle,
-        antiTrapToggle = antiTrapToggle,
+        ragdollToggle = ragdollToggle, antiTrapToggle = antiTrapToggle,
         Status = Status, CloseBtn = CloseBtn
     }
 end
 
 -- ============================================
--- STEP 10: WIRING
+-- STEP 9: WIRING
 -- ============================================
 local ui = createUI()
 
@@ -585,32 +484,7 @@ ui.ragdollToggle.btn.MouseButton1Click:Connect(function()
     end
 end)
 
--- 🥚 Auto-Grab
-utility.autoGrabEnabled = false
-
-ui.autoGrabToggle.btn.MouseButton1Click:Connect(function()
-    utility.autoGrabEnabled = not utility.autoGrabEnabled
-    setToggle(ui.autoGrabToggle, utility.autoGrabEnabled)
-    
-    if utility.autoGrabEnabled then
-        local ok = utility:startAutoGrab()
-        if ok then
-            ui.Status.Text = "Status: 🥚 Auto-Grab ON"
-            ui.Status.TextColor3 = COLORS.GREEN
-        else
-            ui.Status.Text = "Status: ❌ Auto-Grab failed"
-            ui.Status.TextColor3 = COLORS.RED
-            utility.autoGrabEnabled = false
-            setToggle(ui.autoGrabToggle, false)
-        end
-    else
-        utility:stopAutoGrab()
-        ui.Status.Text = "Status: 🥚 Auto-Grab OFF"
-        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-    end
-end)
-
--- 🪤 Anti-Trap (NEW!)
+-- 🪤 Anti-Trap (FIXED — PlayerTrap destroy)
 utility.antiTrapEnabled = false
 
 ui.antiTrapToggle.btn.MouseButton1Click:Connect(function()
@@ -640,12 +514,10 @@ ui.CloseBtn.MouseButton1Click:Connect(function()
     utility.speedEnabled = false
     utility.pickupEnabled = false
     utility.antiRagdollEnabled = false
-    utility.autoGrabEnabled = false
     utility.antiTrapEnabled = false
     if utility.speedConn then utility.speedConn:Disconnect() end
     utility:stopInstantPickup()
     utility:stopAntiRagdoll()
-    utility:stopAutoGrab()
     utility:stopAntiTrap()
     ui.ScreenGui:Destroy()
 end)
