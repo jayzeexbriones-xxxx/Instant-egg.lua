@@ -1,5 +1,5 @@
 -- ============================================================
--- STEAL AN EGG — Manual Chicken + Auto Tween Best Egg
+-- STEAL AN EGG — TP Chicken → Best Egg → Plot
 -- ============================================================
 
 local Players           = game:GetService("Players")
@@ -15,11 +15,11 @@ local LocalPlayer       = Players.LocalPlayer
 -- ============================================================
 local State = {
     speedEnabled = false,
-    farmEnabled  = false,       -- 🔍 WATCHER mode (hindi mag-mo-move)
+    farmEnabled  = false,
     speedValue   = 700,
     minArea      = 9,
     tweenSpeed   = 350,
-    knockbackThreshold = 15,
+    chickenAreas = 3,
 }
 
 local START_POS = Vector3.new(519.155, 70.576, -356.103)
@@ -154,6 +154,98 @@ local function hasEggTool()
 end
 
 -- ============================================================
+-- 🚀 TP (instant)
+-- ============================================================
+local function tpTo(pos)
+    local char = LocalPlayer.Character
+    if not char then return false end
+    pcall(function()
+        char:PivotTo(CFrame.new(pos))
+    end)
+    local h = getHRP()
+    if h then
+        h.AssemblyLinearVelocity = Vector3.zero
+        h.AssemblyAngularVelocity = Vector3.zero
+    end
+    return true
+end
+
+-- ============================================================
+-- 🚀 TWEEN MOVE
+-- ============================================================
+local function tweenTo(targetPos, timeout)
+    local hrp = getHRP()
+    if not hrp then return false end
+    
+    timeout = timeout or 15
+    if (hrp.Position - targetPos).Magnitude <= 5 then return true end
+    
+    local dist = (hrp.Position - targetPos).Magnitude
+    local tweenTime = math.max(dist / State.tweenSpeed, 0.05)
+    
+    local tween = TweenService:Create(
+        hrp,
+        TweenInfo.new(tweenTime, Enum.EasingStyle.Linear),
+        { CFrame = CFrame.new(targetPos) }
+    )
+    
+    local done = false
+    tween.Completed:Connect(function() done = true end)
+    tween:Play()
+    
+    local t0 = tick()
+    while not done and tick() - t0 < timeout do
+        if not State.farmEnabled then 
+            tween:Cancel()
+            break 
+        end
+        task.wait(0.01)
+    end
+    return true
+end
+
+-- ============================================================
+-- 🐔 FIND CHICKEN EGG (area 1-3)
+-- ============================================================
+local function findChickenEgg()
+    if not EggState then return nil, nil end
+    local ok, fieldEggs = pcall(function() return EggState.ReadFieldEggs() end)
+    if not ok or not fieldEggs or not fieldEggs.Records then return nil, nil end
+
+    local bestRec, bestModel = nil, nil
+    local bestDist = math.huge
+    local r = getHRP()
+    if not r then return nil, nil end
+
+    for _, rec in ipairs(fieldEggs.Records) do
+        if rec.State == "Slot" or rec.State == "Dropped" then
+            local areaIdx = nil
+            for i, name in ipairs(AREA_NAMES) do
+                if rec.AreaId == name then areaIdx = i; break end
+            end
+            
+            if areaIdx and areaIdx <= State.chickenAreas then
+                local model = Workspace:FindFirstChild("AreaEggSlotsClient", true)
+                    and Workspace.AreaEggSlotsClient:FindFirstChild(rec.Uid)
+                    or Workspace:FindFirstChild(rec.Uid, true)
+                if model then
+                    local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+                    if part then
+                        local d = (part.Position - r.Position).Magnitude
+                        if d < bestDist then
+                            bestDist = d
+                            bestRec = rec
+                            bestModel = model
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return bestRec, bestModel
+end
+
+-- ============================================================
 -- 🎯 FIND BEST EGG (area 9+)
 -- ============================================================
 local function findBestEgg()
@@ -196,115 +288,92 @@ local function findBestEgg()
 end
 
 -- ============================================================
--- 🚀 TWEEN MOVE
+-- 🚀 GRAB EGG (prompt + remote)
 -- ============================================================
-local function tweenTo(targetPos, timeout)
-    local hrp = getHRP()
-    if not hrp then return false end
+local function grabEgg(rec, model)
+    -- Try remote first
+    pcall(function() EggState.CarryFieldEgg(rec.Uid) end)
+    task.wait(0.1)
     
-    timeout = timeout or 8
-    if (hrp.Position - targetPos).Magnitude <= 5 then return true end
-    
-    local dist = (hrp.Position - targetPos).Magnitude
-    local tweenTime = math.max(dist / State.tweenSpeed, 0.05)
-    
-    local tween = TweenService:Create(
-        hrp,
-        TweenInfo.new(tweenTime, Enum.EasingStyle.Linear),
-        { CFrame = CFrame.new(targetPos) }
-    )
-    
-    local done = false
-    tween.Completed:Connect(function() done = true end)
-    tween:Play()
-    
-    local t0 = tick()
-    while not done and tick() - t0 < timeout do
-        if not State.farmEnabled then 
-            tween:Cancel()
-            break 
-        end
-        task.wait(0.01)
+    -- Try prompt
+    local prompt = model:FindFirstChild("CarryAreaEgg", true)
+        or model:FindFirstChildWhichIsA("ProximityPrompt", true)
+    if prompt and fireproximityprompt then
+        pcall(function()
+            prompt.HoldDuration = 0
+            fireproximityprompt(prompt, 0)
+        end)
     end
-    return true
+    
+    task.wait(0.3)
+    
+    -- Check kung nakuha
+    return hasEggTool()
 end
 
 -- ============================================================
--- ⚡ WAIT FOR PECK (velocity watcher)
--- ============================================================
-local function waitForPeck(timeout)
-    timeout = timeout or 10
-    local hrp = getHRP()
-    if not hrp then return false end
-    
-    local lastPos = hrp.Position
-    local t0 = tick()
-    local pecked = false
-    
-    local conn = RunService.Heartbeat:Connect(function()
-        local h = getHRP()
-        if not h then return end
-        
-        local velocity = h.AssemblyLinearVelocity
-        local speed = velocity.Magnitude
-        local posDelta = (h.Position - lastPos).Magnitude
-        local verticalVel = math.abs(velocity.Y)
-        
-        -- 🎯 Detect knockback
-        if speed > State.knockbackThreshold 
-           or posDelta > 2 
-           or verticalVel > 20 then
-            pecked = true
-        end
-        
-        lastPos = h.Position
-    end)
-    
-    while tick() - t0 < timeout and not pecked do
-        if not State.farmEnabled then break end
-        task.wait(0.05)
-    end
-    
-    conn:Disconnect()
-    return pecked
-end
-
--- ============================================================
--- 🚀 FARM CYCLE (Watcher mode — hintayin ma-tuka tapos auto tween)
+-- 🚀 FARM CYCLE
 -- ============================================================
 local function farmCycle()
     if not State.farmEnabled then return end
     if not loadModules() then return end
 
-    -- ============ STEP 1: Wait for you to get pecked ============
-    ui.Status.Text = "Status: 🐔 Waiting for peck (get chicken egg)..."
+    -- ============ STEP 1: TP sa chicken egg ============
+    ui.Status.Text = "Status: 🐔 TP to chicken..."
     ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
     
-    local pecked = waitForPeck(30)  -- Wait up to 30s
-    
-    if not pecked then
-        print("[Farm] No peck detected — turning off")
+    local chickenRec, chickenModel = findChickenEgg()
+    if not chickenRec or not chickenModel then
+        print("[Farm] No chicken egg found")
         State.farmEnabled = false
         setToggle(ui.farmToggle, false)
-        ui.Status.Text = "Status: ⚠️ No peck detected"
-        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+        ui.Status.Text = "Status: ❌ No chicken egg"
+        ui.Status.TextColor3 = Color3.fromRGB(255, 60, 60)
+        return
+    end
+
+    local chickenPart = chickenModel.PrimaryPart or chickenModel:FindFirstChildWhichIsA("BasePart", true)
+    if not chickenPart then return end
+
+    -- TP sa chicken
+    tpTo(chickenPart.Position)
+    task.wait(0.3)
+
+    -- ============ STEP 2: Kunin chicken egg ============
+    ui.Status.Text = "Status: 🥚 Grabbing chicken egg..."
+    ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+    
+    local gotChicken = grabEgg(chickenRec, chickenModel)
+    
+    if not gotChicken then
+        -- Try ulit
+        task.wait(0.2)
+        gotChicken = grabEgg(chickenRec, chickenModel)
+    end
+    
+    if not gotChicken then
+        print("[Farm] Failed to grab chicken egg")
+        State.farmEnabled = false
+        setToggle(ui.farmToggle, false)
+        ui.Status.Text = "Status: ❌ Chicken grab failed"
+        ui.Status.TextColor3 = Color3.fromRGB(255, 60, 60)
         return
     end
     
-    print("[Farm] ✅ Pecked! Going to best egg...")
+    print("[Farm] ✅ Got chicken egg!")
 
-    -- ============ STEP 2: Tween sa Best Egg ============
-    ui.Status.Text = "Status: 🎯 Tweening to best egg..."
+    -- ============ STEP 3: Tween sa best egg ============
+    ui.Status.Text = "Status: 🎯 Going to best egg..."
     ui.Status.TextColor3 = Color3.fromRGB(0, 180, 90)
     
     local bestRec, bestModel = findBestEgg()
     if not bestRec or not bestModel then
-        print("[Farm] No best egg found — going to base")
-        tweenTo(START_POS, 8)
+        print("[Farm] No best egg — going to plot")
+        tweenTo(START_POS, 15)
         task.wait(1)
         State.farmEnabled = false
         setToggle(ui.farmToggle, false)
-        ui.Status.Text = "Status: ⚠️ No best egg found"
+        ui.Status.Text = "Status: ⚠️ No best egg"
         ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
         return
     end
@@ -312,25 +381,19 @@ local function farmCycle()
     local bestPart = bestModel.PrimaryPart or bestModel:FindFirstChildWhichIsA("BasePart", true)
     if not bestPart then return end
 
-    -- 🚀 Tween sa best egg
-    tweenTo(bestPart.Position, 15)
-    task.wait(0.15)
+    -- Tween sa best egg
+    tweenTo(bestPart.Position, 20)
+    task.wait(0.2)
 
-    -- 🥚 Kunin yung best egg
-    pcall(function() EggState.CarryFieldEgg(bestRec.Uid) end)
-    local bestPrompt = bestModel:FindFirstChild("CarryAreaEgg", true)
-        or bestModel:FindFirstChildWhichIsA("ProximityPrompt", true)
-    if bestPrompt and fireproximityprompt then
-        pcall(function()
-            bestPrompt.HoldDuration = 0
-            fireproximityprompt(bestPrompt, 0)
-        end)
-    end
-
+    -- ============ STEP 4: Kunin best egg ============
+    ui.Status.Text = "Status: 🥚 Grabbing best egg..."
+    ui.Status.TextColor3 = Color3.fromRGB(0, 180, 90)
+    
+    grabEgg(bestRec, bestModel)
     task.wait(0.3)
 
-    -- ============ STEP 3: Deliver to base ============
-    ui.Status.Text = "Status: 🏠 Delivering to base..."
+    -- ============ STEP 5: Return sa plot ============
+    ui.Status.Text = "Status: 🏠 Returning to plot..."
     ui.Status.TextColor3 = Color3.fromRGB(0, 180, 90)
     
     local deliverPos = START_POS
@@ -343,32 +406,15 @@ local function farmCycle()
         end
     end)
     
-    tweenTo(deliverPos, 15)
+    tweenTo(deliverPos, 20)
     task.wait(1.5)
 
-    -- ============ STEP 4: Check claim ============
-    local claimed = false
-    local checkT0 = tick()
-    while tick() - checkT0 < 3 do
-        if not hasEggTool() then
-            claimed = true
-            break
-        end
-        task.wait(0.2)
-    end
-
-    -- ============ STEP 5: AUTO OFF ============
+    -- ============ STEP 6: AUTO OFF ============
     State.farmEnabled = false
     setToggle(ui.farmToggle, false)
-    
-    if claimed then
-        ui.Status.Text = "Status: ✅ Delivered — Auto OFF"
-        ui.Status.TextColor3 = Color3.fromRGB(0, 180, 90)
-        print("[Farm] ✅ Delivered!")
-    else
-        ui.Status.Text = "Status: ⚠️ Delivered (unconfirmed)"
-        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-    end
+    ui.Status.Text = "Status: ✅ Done — Auto OFF"
+    ui.Status.TextColor3 = Color3.fromRGB(0, 180, 90)
+    print("[Farm] ✅ Complete!")
 end
 
 -- ============================================================
@@ -485,7 +531,7 @@ local function createUI()
     end
 
     local speedToggle = makeToggle(50, "Speed Bypass (700)", "⚡")
-    local farmToggle = makeToggle(95, "Auto Tween Best", "🎯")
+    local farmToggle = makeToggle(95, "Auto Farm Best", "🎯")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
@@ -544,7 +590,7 @@ ui.farmToggle.btn.MouseButton1Click:Connect(function()
         end
         State.farmEnabled = true
         setToggle(ui.farmToggle, true)
-        ui.Status.Text = "Status: 🐔 Get chicken egg + wait for peck..."
+        ui.Status.Text = "Status: 🐔 Starting..."
         ui.Status.TextColor3 = COLORS.GREEN
         
         task.spawn(function()
