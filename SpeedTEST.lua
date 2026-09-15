@@ -1,22 +1,18 @@
 -- ============================================
--- TP TEST + UI
+-- SERVICES
 -- ============================================
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CoreGui = game:GetService("CoreGui")
+local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 
 -- ============================================
 -- CONFIG
 -- ============================================
-local AREAS = {
-    "Forest", "Lake", "Desert", "Jungle", "Snow",
-    "Volcano", "Abyss Ocean", "Prehistoric", "Cosmic",
-    "Cherry Blossom", "Titan Temple",
-}
-
 local Config = {
     baitArea = "Forest",
+    tpOffset = Vector3.new(0, 3, 0),
 }
 
 -- ============================================
@@ -32,31 +28,39 @@ pcall(function()
 end)
 
 -- ============================================
--- FIND EGG SA FOREST
+-- FIND FOREST EGG
 -- ============================================
 local function findForestEgg()
-    if not EggState then return nil end
+    if not EggState then return nil, nil end
     local s, r = pcall(function()
-        local egg = nil
+        local egg, model = nil, nil
         local closestDist = math.huge
         local char = LocalPlayer.Character
         local myPos = char and char:FindFirstChild("HumanoidRootPart")
-        if not myPos then return nil end
+        if not myPos then return nil, nil end
         myPos = myPos.Position
 
         for _, data in next, EggState.ReadFieldEggs().Records do
-            if data.AreaId == Config.baitArea then
-                local dist = (data.BoundsCFrame.Position - myPos).Magnitude
-                if dist < closestDist then
-                    closestDist = dist
-                    egg = data
+            if data.State == "Slot" or data.State == "Dropped" then
+                if data.AreaId == Config.baitArea then
+                    local m = Workspace:FindFirstChild("AreaEggSlotsClient", true)
+                        and Workspace.AreaEggSlotsClient:FindFirstChild(data.Uid)
+                        or Workspace:FindFirstChild(data.Uid, true)
+                    if m then
+                        local dist = (data.BoundsCFrame.Position - myPos).Magnitude
+                        if dist < closestDist then
+                            closestDist = dist
+                            egg = data
+                            model = m
+                        end
+                    end
                 end
             end
         end
-        return egg
+        return egg, model
     end)
     if s then return r end
-    return nil
+    return nil, nil
 end
 
 -- ============================================
@@ -69,13 +73,76 @@ local function tpTo(pos)
     if not hrp then return false end
 
     pcall(function()
-        hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
+        hrp.CFrame = CFrame.new(pos + Config.tpOffset)
     end)
 
     hrp.AssemblyLinearVelocity = Vector3.zero
     hrp.AssemblyAngularVelocity = Vector3.zero
 
     return true
+end
+
+-- ============================================
+-- GET PROMPT
+-- ============================================
+local function getPrompt(egg, model)
+    local s, r = pcall(function()
+        local eggPos = egg.BoundsCFrame.Position
+        local closestPrompt = nil
+        local closestDist = math.huge
+
+        -- Try model first
+        local prompt = model:FindFirstChild("CarryAreaEgg", true)
+            or model:FindFirstChildWhichIsA("ProximityPrompt", true)
+        if prompt then return prompt end
+
+        -- Fallback: search all prompts
+        for _, p in next, Workspace:GetDescendants() do
+            if p:IsA("ProximityPrompt") and p.Enabled then
+                local parent = p.Parent
+                if parent then
+                    local pPos = parent:IsA("BasePart") and parent.Position
+                        or (parent:FindFirstChildWhichIsA("BasePart") and parent:FindFirstChildWhichIsA("BasePart").Position)
+                    if pPos then
+                        local dist = (eggPos - pPos).Magnitude
+                        if dist < closestDist and dist < 15 then
+                            closestDist = dist
+                            closestPrompt = p
+                        end
+                    end
+                end
+            end
+        end
+        return closestPrompt
+    end)
+    if s then return r end
+    return nil
+end
+
+-- ============================================
+-- GRAB EGG
+-- ============================================
+local function grabEgg(egg, model)
+    -- Try remote first
+    pcall(function()
+        if EggState and EggState.CarryFieldEgg then
+            EggState.CarryFieldEgg(egg.Uid)
+        end
+    end)
+    task.wait(0.1)
+
+    -- Try prompt
+    local prompt = getPrompt(egg, model)
+    if prompt and fireproximityprompt then
+        pcall(function()
+            prompt.Enabled = true
+            prompt.HoldDuration = 0
+            prompt.RequiresLineOfSight = false
+            prompt.MaxActivationDistance = 9999
+            fireproximityprompt(prompt, 0)
+        end)
+    end
+    task.wait(0.2)
 end
 
 -- ============================================
@@ -131,7 +198,7 @@ local function createUI()
     Title.Size = UDim2.new(1, -50, 1, 0)
     Title.Position = UDim2.new(0, 12, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "🥚 TP Forest Test"
+    Title.Text = "🥚 TP Forest → Grab"
     Title.TextColor3 = COLORS.TEXT
     Title.TextSize = 13
     Title.Font = Enum.Font.GothamBold
@@ -147,32 +214,30 @@ local function createUI()
     CloseBtn.Font = Enum.Font.GothamBold
     Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
 
-    -- Button: TP to Forest
-    local TPButton = Instance.new("TextButton", Main)
-    TPButton.Size = UDim2.new(1, -30, 0, 40)
-    TPButton.Position = UDim2.new(0, 15, 0, 55)
-    TPButton.BackgroundColor3 = COLORS.GREEN
-    TPButton.Text = "🏞️ TP to Forest Egg"
-    TPButton.TextColor3 = COLORS.TEXT
-    TPButton.TextSize = 14
-    TPButton.Font = Enum.Font.GothamBold
-    TPButton.AutoButtonColor = false
-    TPButton.Parent = Main
+    -- Button: TP + Grab
+    local GrabButton = Instance.new("TextButton", Main)
+    GrabButton.Size = UDim2.new(1, -30, 0, 40)
+    GrabButton.Position = UDim2.new(0, 15, 0, 55)
+    GrabButton.BackgroundColor3 = COLORS.GREEN
+    GrabButton.Text = "🐔 TP Forest + Grab"
+    GrabButton.TextColor3 = COLORS.TEXT
+    GrabButton.TextSize = 14
+    GrabButton.Font = Enum.Font.GothamBold
+    GrabButton.AutoButtonColor = false
+    GrabButton.Parent = Main
+    Instance.new("UICorner", GrabButton).CornerRadius = UDim.new(0, 8)
 
-    Instance.new("UICorner", TPButton).CornerRadius = UDim.new(0, 8)
-
-    -- Button: Check Position
+    -- Button: Check
     local CheckButton = Instance.new("TextButton", Main)
     CheckButton.Size = UDim2.new(1, -30, 0, 30)
     CheckButton.Position = UDim2.new(0, 15, 0, 100)
     CheckButton.BackgroundColor3 = COLORS.TITLE_BG
-    CheckButton.Text = "📊 Check Position"
+    CheckButton.Text = "📊 Check if Has Egg"
     CheckButton.TextColor3 = COLORS.TEXT
     CheckButton.TextSize = 12
     CheckButton.Font = Enum.Font.GothamBold
     CheckButton.AutoButtonColor = false
     CheckButton.Parent = Main
-
     Instance.new("UICorner", CheckButton).CornerRadius = UDim.new(0, 6)
 
     -- Status
@@ -188,7 +253,7 @@ local function createUI()
 
     return {
         ScreenGui = ScreenGui,
-        TPButton = TPButton,
+        GrabButton = GrabButton,
         CheckButton = CheckButton,
         Status = Status,
         CloseBtn = CloseBtn,
@@ -198,13 +263,27 @@ end
 local ui = createUI()
 
 -- ============================================
+-- HAS EGG CHECK
+-- ============================================
+local function hasEgg()
+    local char = LocalPlayer.Character
+    if not char then return false end
+    for _, obj in next, char:GetChildren() do
+        if obj:IsA("Tool") and obj:GetAttribute("ItemType") == "AssetEgg" then
+            return true
+        end
+    end
+    return false
+end
+
+-- ============================================
 -- WIRING
 -- ============================================
-ui.TPButton.MouseButton1Click:Connect(function()
+ui.GrabButton.MouseButton1Click:Connect(function()
     ui.Status.Text = "Status: 🔍 Finding Forest egg..."
     ui.Status.TextColor3 = COLORS.YELLOW
 
-    local egg = findForestEgg()
+    local egg, model = findForestEgg()
     if not egg then
         ui.Status.Text = "Status: ❌ No Forest egg"
         ui.Status.TextColor3 = COLORS.RED
@@ -215,30 +294,29 @@ ui.TPButton.MouseButton1Click:Connect(function()
     ui.Status.TextColor3 = COLORS.GREEN
 
     tpTo(egg.BoundsCFrame.Position)
+    task.wait(0.3)
 
-    task.wait(1)
+    ui.Status.Text = "Status: 🥚 Grabbing..."
+    grabEgg(egg, model)
 
-    -- Check kung naka-TP
-    local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if hrp then
-        local dist = (hrp.Position - egg.BoundsCFrame.Position).Magnitude
-        if dist < 15 then
-            ui.Status.Text = "Status: ✅ TP OK (dist: " .. math.floor(dist) .. ")"
-            ui.Status.TextColor3 = COLORS.GREEN
-        else
-            ui.Status.Text = "Status: ❌ TP REVERTED (dist: " .. math.floor(dist) .. ")"
-            ui.Status.TextColor3 = COLORS.RED
-        end
+    task.wait(0.5)
+
+    if hasEgg() then
+        ui.Status.Text = "Status: ✅ Grabbed Forest egg!"
+        ui.Status.TextColor3 = COLORS.GREEN
+    else
+        ui.Status.Text = "Status: ⚠️ Grab failed — retry"
+        ui.Status.TextColor3 = COLORS.YELLOW
     end
 end)
 
 ui.CheckButton.MouseButton1Click:Connect(function()
-    local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if hrp then
-        ui.Status.Text = "Pos: " .. math.floor(hrp.Position.X) .. ", " .. math.floor(hrp.Position.Y) .. ", " .. math.floor(hrp.Position.Z)
-        ui.Status.TextColor3 = COLORS.YELLOW
+    if hasEgg() then
+        ui.Status.Text = "Status: ✅ Has egg in hand"
+        ui.Status.TextColor3 = COLORS.GREEN
+    else
+        ui.Status.Text = "Status: ❌ No egg in hand"
+        ui.Status.TextColor3 = COLORS.RED
     end
 end)
 
