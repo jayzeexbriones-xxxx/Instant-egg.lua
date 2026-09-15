@@ -1,49 +1,51 @@
 -- ============================================
--- STEP 1: LOAD SPEED BYPASS
+-- TP TEST + UI
 -- ============================================
-pcall(function(...)
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/Lutosys/opensrc/refs/heads/main/stealaeggspeedbypass.lua"))()
-end)
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CoreGui = game:GetService("CoreGui")
+local LocalPlayer = Players.LocalPlayer
 
 -- ============================================
--- STEP 2: SERVICES
+-- CONFIG
 -- ============================================
-local utility = {
-    RunService = game:GetService("RunService"),
-    Players = game:GetService("Players"),
-    Workspace = game:GetService("Workspace"),
-    ReplicatedStorage = game:GetService("ReplicatedStorage"),
-    CoreGui = game:GetService("CoreGui")
-}
-
--- ============================================
--- STEP 3: CONFIG
--- ============================================
-utility.areas = {
+local AREAS = {
     "Forest", "Lake", "Desert", "Jungle", "Snow",
     "Volcano", "Abyss Ocean", "Prehistoric", "Cosmic",
     "Cherry Blossom", "Titan Temple",
 }
 
-getgenv().config = {
-    speedValue = 250,
-    baitArea = "Lake",          -- 🏞️ Bagong bait area
-    minArea = 9,
-    knockbackThreshold = 25,
+local Config = {
+    baitArea = "Forest",
 }
 
 -- ============================================
--- STEP 4: EGG LOGIC
+-- LOAD EGG STATE
 -- ============================================
-function utility:getBaitEgg()
-    local s, r = pcall(function(...)
+local EggState = nil
+pcall(function()
+    local client = ReplicatedStorage:FindFirstChild("Client")
+    if client then
+        local es = client:FindFirstChild("EggState")
+        if es then EggState = require(es) end
+    end
+end)
+
+-- ============================================
+-- FIND EGG SA FOREST
+-- ============================================
+local function findForestEgg()
+    if not EggState then return nil end
+    local s, r = pcall(function()
         local egg = nil
         local closestDist = math.huge
-        local myPos = self.LocalPlayer.Character and self.LocalPlayer.Character.HumanoidRootPart.Position
+        local char = LocalPlayer.Character
+        local myPos = char and char:FindFirstChild("HumanoidRootPart")
         if not myPos then return nil end
-        
-        for key, data in next, self.EggState.ReadFieldEggs().Records do
-            if data.AreaId == getgenv().config.baitArea then
+        myPos = myPos.Position
+
+        for _, data in next, EggState.ReadFieldEggs().Records do
+            if data.AreaId == Config.baitArea then
                 local dist = (data.BoundsCFrame.Position - myPos).Magnitude
                 if dist < closestDist then
                     closestDist = dist
@@ -53,264 +55,31 @@ function utility:getBaitEgg()
         end
         return egg
     end)
-    if s and r then return r end
+    if s then return r end
     return nil
 end
 
-function utility:getBestEgg()
-    local s, r = pcall(function(...)
-        local egg = nil
-        local biggestegg = 0
-        for key, data in next, self.EggState.ReadFieldEggs().Records do
-            local idx = table.find(self.areas, data.AreaId)
-            if idx and idx > getgenv().config.minArea then
-                if data.AssetScale > biggestegg then
-                    biggestegg = data.AssetScale
-                    egg = data
-                end
-            end
-        end
-        return egg
-    end)
-    if s and r then return r end
-    return nil
-end
-
-function utility:TeleportTo(pos)
-    local char = self.LocalPlayer.Character
-    if not char then return end
+-- ============================================
+-- TP FUNCTION
+-- ============================================
+local function tpTo(pos)
+    local char = LocalPlayer.Character
+    if not char then return false end
     local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
+    if not hrp then return false end
+
     pcall(function()
-        hrp.CFrame = CFrame.new(pos)
+        hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
     end)
-end
 
-function utility:getproximitypromptforegg(egg)
-    local s, r = pcall(function(...)
-        local eggPos = egg.BoundsCFrame.Position
-        local closestPrompt = nil
-        local closestDist = math.huge
-
-        for _, prompt in next, self.Workspace:GetDescendants() do
-            if prompt:IsA("ProximityPrompt") and prompt.Enabled then
-                local parent = prompt.Parent
-                if parent then
-                    local pPos = parent:IsA("BasePart") and parent.Position or (parent:FindFirstChildWhichIsA("BasePart") and parent:FindFirstChildWhichIsA("BasePart").Position)
-                    if pPos then
-                        local dist = (eggPos - pPos).Magnitude
-                        if dist < closestDist and dist < 15 then
-                            closestDist = dist
-                            closestPrompt = prompt
-                        end
-                    end
-                end
-            end
-        end
-
-        if not closestPrompt then
-            local CarryAreaEggs = self.Workspace:QueryDescendants("#CarryAreaEgg")
-            for _, prompt in next, CarryAreaEggs do
-                if prompt:IsA("ProximityPrompt") then
-                    local p = prompt.Parent
-                    if p and p:IsA("BasePart") then
-                        local dist = (eggPos - p.Position).Magnitude
-                        if dist < closestDist then
-                            closestDist = dist
-                            closestPrompt = prompt
-                        end
-                    end
-                end
-            end
-        end
-
-        return closestPrompt
-    end)
-    if s and r then return r end
-    return nil
-end
-
--- ⚡ VELOCITY-BASED HIT DETECTION
-function utility:startVelocityWatcher(callback)
-    local char = self.LocalPlayer.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    
-    local connection
-    connection = utility.RunService.Heartbeat:Connect(function()
-        if not utility.eggEnabled then
-            connection:Disconnect()
-            return
-        end
-        
-        local currentChar = utility.LocalPlayer.Character
-        if not currentChar then
-            connection:Disconnect()
-            return
-        end
-        
-        local currentHRP = currentChar:FindFirstChild("HumanoidRootPart")
-        if not currentHRP then return end
-        
-        local velocity = currentHRP.AssemblyLinearVelocity
-        local speed = velocity.Magnitude
-        
-        if speed > getgenv().config.knockbackThreshold then
-            connection:Disconnect()
-            callback()
-        end
-    end)
-    
-    return connection
-end
-
--- ============================================
--- STEP 5: INIT EGG
--- ============================================
-function utility:initEgg()
-    self.LocalPlayer = self.Players.LocalPlayer
-    if not fireproximityprompt then
-        return false, "Missing fireproximityprompt"
-    end
-
-    self.Client = self.ReplicatedStorage:FindFirstChild("Client")
-    if not self.Client then return false, "No Client" end
-
-    local eggStateModule = self.Client:FindFirstChild("EggState")
-    if not eggStateModule then return false, "No EggState" end
-
-    self.EggState = require(eggStateModule)
-    if not self.EggState then return false, "EggState require failed" end
+    hrp.AssemblyLinearVelocity = Vector3.zero
+    hrp.AssemblyAngularVelocity = Vector3.zero
 
     return true
 end
 
 -- ============================================
--- STEP 6: AUTO EGG (Lake → Best Egg → Stay)
--- ============================================
-function utility:startEgg()
-    if self.eggConn then pcall(function() task.cancel(self.eggConn) end) end
-    self.eggConn = task.spawn(function()
-        while self.eggEnabled do
-            pcall(function()
-                local myChar = self.LocalPlayer.Character
-                local myPos = myChar and myChar.HumanoidRootPart.Position
-                if not myPos then task.wait(0.3) return end
-                
-                -- 1. TP sa Lake egg
-                local baitEgg = self:getBaitEgg()
-                if not baitEgg then
-                    ui.Status.Text = "Status: ⚠️ No Lake egg — wait..."
-                    ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-                    task.wait(0.5)
-                    return
-                end
-                
-                ui.Status.Text = "Status: 🏞️ TP to Lake..."
-                ui.Status.TextColor3 = Color3.fromRGB(0, 180, 90)
-                
-                self:TeleportTo(baitEgg.BoundsCFrame.Position)
-                task.wait(0.3)
-                
-                -- 2. Grab Lake egg
-                ui.Status.Text = "Status: 🥚 Grabbing Lake egg..."
-                local p = self:getproximitypromptforegg(baitEgg)
-                if p then
-                    pcall(function() fireproximityprompt(p, 0, true) end)
-                end
-                task.wait(0.2)
-                
-                -- 3. Hintayin ma-hit
-                ui.Status.Text = "Status: ⚡ Waiting for hit..."
-                ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-                
-                -- Force touch sa Lake guard
-                pcall(function()
-                    local guardAreas = self.Workspace:FindFirstChild("__OBJECTS", true)
-                        and self.Workspace.__OBJECTS:FindFirstChild("Areas")
-                        and self.Workspace.__OBJECTS.Areas:FindFirstChild("GuardAreas")
-                    if guardAreas then
-                        local lake = guardAreas:FindFirstChild("Lake")
-                        if lake then
-                            local guard = lake:FindFirstChild("Guard")
-                            if guard then
-                                local collider = guard:FindFirstChild("Collider")
-                                    or guard:FindFirstChild("HumanoidRootPart")
-                                    or guard.PrimaryPart
-                                if collider and firetouchinterest then
-                                    local hrp = self.LocalPlayer.Character and self.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                                    if hrp then
-                                        firetouchinterest(hrp, collider, 0)
-                                        task.wait(0.05)
-                                        firetouchinterest(hrp, collider, 1)
-                                        print("[Farm] ✅ Force touch sa Lake guard")
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end)
-                
-                local hit = false
-                local conn = self:startVelocityWatcher(function()
-                    hit = true
-                end)
-                
-                local waitTime = 0
-                while waitTime < 8 and not hit do
-                    task.wait(0.1)
-                    waitTime = waitTime + 0.1
-                end
-                
-                if conn then conn:Disconnect() end
-                
-                -- 4. Pag na-hit → TP sa best egg → STAY
-                if hit then
-                    ui.Status.Text = "Status: 🎯 TP to best egg..."
-                    ui.Status.TextColor3 = Color3.fromRGB(0, 180, 90)
-                    
-                    local bestEgg = self:getBestEgg()
-                    if bestEgg then
-                        self:TeleportTo(bestEgg.BoundsCFrame.Position)
-                        task.wait(0.3)
-                        
-                        -- Grab best egg
-                        local bp = self:getproximitypromptforegg(bestEgg)
-                        if bp then
-                            pcall(function() fireproximityprompt(bp, 0, true) end)
-                        end
-                        task.wait(0.2)
-                        
-                        -- ✅ STAY LANG DITO
-                        ui.Status.Text = "Status: 🏠 Stay at best egg"
-                        ui.Status.TextColor3 = Color3.fromRGB(0, 180, 90)
-                        
-                        task.wait(1)
-                    else
-                        ui.Status.Text = "Status: ⚠️ No best egg"
-                        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-                    end
-                else
-                    ui.Status.Text = "Status: ⚠️ No hit — retry"
-                    ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-                end
-            end)
-            task.wait(0.3)
-        end
-    end)
-end
-
-function utility:stopEgg()
-    self.eggEnabled = false
-    if self.eggConn then
-        pcall(function() task.cancel(self.eggConn) end)
-        self.eggConn = nil
-    end
-end
-
--- ============================================
--- STEP 7: UI
+-- UI
 -- ============================================
 local COLORS = {
     BG = Color3.fromRGB(25, 25, 30),
@@ -319,53 +88,52 @@ local COLORS = {
     TEXT = Color3.fromRGB(255, 255, 255),
     GREEN = Color3.fromRGB(0, 180, 90),
     RED = Color3.fromRGB(200, 50, 50),
-    KNOB = Color3.fromRGB(255, 255, 255),
-    TRACK_OFF = Color3.fromRGB(70, 70, 80)
+    YELLOW = Color3.fromRGB(255, 200, 0),
 }
 
 local function createUI()
-    if utility.CoreGui:FindFirstChild("StealEggUI") then
-        utility.CoreGui.StealEggUI:Destroy()
+    if CoreGui:FindFirstChild("StealEggUI") then
+        CoreGui.StealEggUI:Destroy()
     end
 
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "StealEggUI"
     ScreenGui.ResetOnSpawn = false
-    ScreenGui.Parent = utility.CoreGui
+    ScreenGui.Parent = CoreGui
 
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 280, 0, 180)
-    Main.Position = UDim2.new(0.5, -140, 0.5, -90)
+    Main.Size = UDim2.new(0, 260, 0, 180)
+    Main.Position = UDim2.new(0.5, -130, 0.5, -90)
     Main.BackgroundColor3 = COLORS.BG
     Main.BorderSizePixel = 0
     Main.Active = true
     Main.Draggable = true
     Main.Parent = ScreenGui
 
-    local c1 = Instance.new("UICorner", Main)
-    c1.CornerRadius = UDim.new(0, 10)
-    local s1 = Instance.new("UIStroke", Main)
-    s1.Color = COLORS.STROKE
+    Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
+    local stroke = Instance.new("UIStroke", Main)
+    stroke.Color = COLORS.STROKE
 
+    -- Title
     local TitleBar = Instance.new("Frame", Main)
     TitleBar.Size = UDim2.new(1, 0, 0, 35)
     TitleBar.BackgroundColor3 = COLORS.TITLE_BG
     TitleBar.BorderSizePixel = 0
-    local c2 = Instance.new("UICorner", TitleBar)
-    c2.CornerRadius = UDim.new(0, 10)
-    local TitleCover = Instance.new("Frame", TitleBar)
-    TitleCover.Size = UDim2.new(1, 0, 0, 10)
-    TitleCover.Position = UDim2.new(0, 0, 1, -10)
-    TitleCover.BackgroundColor3 = COLORS.TITLE_BG
-    TitleCover.BorderSizePixel = 0
+    Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
+
+    local Cover = Instance.new("Frame", TitleBar)
+    Cover.Size = UDim2.new(1, 0, 0, 10)
+    Cover.Position = UDim2.new(0, 0, 1, -10)
+    Cover.BackgroundColor3 = COLORS.TITLE_BG
+    Cover.BorderSizePixel = 0
 
     local Title = Instance.new("TextLabel", TitleBar)
     Title.Size = UDim2.new(1, -50, 1, 0)
     Title.Position = UDim2.new(0, 12, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "🥚 Lake → Best Egg"
+    Title.Text = "🥚 TP Forest Test"
     Title.TextColor3 = COLORS.TEXT
-    Title.TextSize = 14
+    Title.TextSize = 13
     Title.Font = Enum.Font.GothamBold
     Title.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -377,164 +145,106 @@ local function createUI()
     CloseBtn.TextColor3 = COLORS.TEXT
     CloseBtn.TextSize = 14
     CloseBtn.Font = Enum.Font.GothamBold
-    local c3 = Instance.new("UICorner", CloseBtn)
-    c3.CornerRadius = UDim.new(0, 6)
+    Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
 
-    local function makeToggle(y, label, icon)
-        local lbl = Instance.new("TextLabel", Main)
-        lbl.Size = UDim2.new(1, -120, 0, 25)
-        lbl.Position = UDim2.new(0, 15, 0, y)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = icon .. " " .. label
-        lbl.TextColor3 = COLORS.TEXT
-        lbl.TextSize = 14
-        lbl.Font = Enum.Font.GothamBold
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
+    -- Button: TP to Forest
+    local TPButton = Instance.new("TextButton", Main)
+    TPButton.Size = UDim2.new(1, -30, 0, 40)
+    TPButton.Position = UDim2.new(0, 15, 0, 55)
+    TPButton.BackgroundColor3 = COLORS.GREEN
+    TPButton.Text = "🏞️ TP to Forest Egg"
+    TPButton.TextColor3 = COLORS.TEXT
+    TPButton.TextSize = 14
+    TPButton.Font = Enum.Font.GothamBold
+    TPButton.AutoButtonColor = false
+    TPButton.Parent = Main
 
-        local state = Instance.new("TextLabel", Main)
-        state.Size = UDim2.new(0, 45, 0, 25)
-        state.Position = UDim2.new(1, -120, 0, y)
-        state.BackgroundTransparency = 1
-        state.Text = "OFF"
-        state.TextColor3 = COLORS.RED
-        state.TextSize = 13
-        state.Font = Enum.Font.GothamBold
-        state.TextXAlignment = Enum.TextXAlignment.Right
+    Instance.new("UICorner", TPButton).CornerRadius = UDim.new(0, 8)
 
-        local track = Instance.new("Frame", Main)
-        track.Size = UDim2.new(0, 50, 0, 26)
-        track.Position = UDim2.new(1, -65, 0, y)
-        track.BackgroundColor3 = COLORS.TRACK_OFF
-        track.BorderSizePixel = 0
-        local tc = Instance.new("UICorner", track)
-        tc.CornerRadius = UDim.new(1, 0)
+    -- Button: Check Position
+    local CheckButton = Instance.new("TextButton", Main)
+    CheckButton.Size = UDim2.new(1, -30, 0, 30)
+    CheckButton.Position = UDim2.new(0, 15, 0, 100)
+    CheckButton.BackgroundColor3 = COLORS.TITLE_BG
+    CheckButton.Text = "📊 Check Position"
+    CheckButton.TextColor3 = COLORS.TEXT
+    CheckButton.TextSize = 12
+    CheckButton.Font = Enum.Font.GothamBold
+    CheckButton.AutoButtonColor = false
+    CheckButton.Parent = Main
 
-        local knob = Instance.new("Frame", track)
-        knob.Size = UDim2.new(0, 20, 0, 20)
-        knob.Position = UDim2.new(0, 3, 0.5, -10)
-        knob.BackgroundColor3 = COLORS.KNOB
-        knob.BorderSizePixel = 0
-        local kc = Instance.new("UICorner", knob)
-        kc.CornerRadius = UDim.new(1, 0)
+    Instance.new("UICorner", CheckButton).CornerRadius = UDim.new(0, 6)
 
-        local btn = Instance.new("TextButton", Main)
-        btn.Size = UDim2.new(0, 110, 0, 36)
-        btn.Position = UDim2.new(1, -120, 0, y - 5)
-        btn.BackgroundTransparency = 1
-        btn.Text = ""
-
-        return {track = track, knob = knob, state = state, btn = btn}
-    end
-
-    local speedToggle = makeToggle(50, "Speed Bypass", "⚡")
-    local eggToggle = makeToggle(95, "Auto Lake → Best", "🏞️")
-
+    -- Status
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
     Status.Position = UDim2.new(0, 15, 0, 145)
     Status.BackgroundTransparency = 1
     Status.Text = "Status: Ready"
-    Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-    Status.TextSize = 12
+    Status.TextColor3 = COLORS.YELLOW
+    Status.TextSize = 11
     Status.Font = Enum.Font.Gotham
     Status.TextXAlignment = Enum.TextXAlignment.Left
 
     return {
-        ScreenGui = ScreenGui, Main = Main,
-        speedToggle = speedToggle, eggToggle = eggToggle,
-        Status = Status, CloseBtn = CloseBtn
+        ScreenGui = ScreenGui,
+        TPButton = TPButton,
+        CheckButton = CheckButton,
+        Status = Status,
+        CloseBtn = CloseBtn,
     }
 end
 
--- ============================================
--- STEP 8: STATE + WIRING
--- ============================================
 local ui = createUI()
 
-local function setToggle(t, on)
-    t.track.BackgroundColor3 = on and COLORS.GREEN or COLORS.TRACK_OFF
-    t.knob.Position = on and UDim2.new(0, 27, 0.5, -10) or UDim2.new(0, 3, 0.5, -10)
-    t.state.Text = on and "ON" or "OFF"
-    t.state.TextColor3 = on and COLORS.GREEN or COLORS.RED
-end
+-- ============================================
+-- WIRING
+-- ============================================
+ui.TPButton.MouseButton1Click:Connect(function()
+    ui.Status.Text = "Status: 🔍 Finding Forest egg..."
+    ui.Status.TextColor3 = COLORS.YELLOW
 
-utility.speedEnabled = false
-utility.speedConn = nil
-
-ui.speedToggle.btn.MouseButton1Click:Connect(function()
-    utility.speedEnabled = not utility.speedEnabled
-    setToggle(ui.speedToggle, utility.speedEnabled)
-    
-    if utility.speedEnabled then
-        if utility.speedConn then utility.speedConn:Disconnect() end
-        utility.speedConn = utility.RunService.Heartbeat:Connect(function()
-            if not utility.speedEnabled then return end
-            local char = utility.Players.LocalPlayer.Character
-            if not char then return end
-            local hum = char:FindFirstChild("Humanoid")
-            if not hum then return end
-            hum.WalkSpeed = getgenv().config.speedValue
-        end)
-        ui.Status.Text = "Status: ⚡ Speed ON (" .. getgenv().config.speedValue .. ")"
-        ui.Status.TextColor3 = COLORS.GREEN
-    else
-        if utility.speedConn then
-            utility.speedConn:Disconnect()
-            utility.speedConn = nil
-        end
-        local char = utility.Players.LocalPlayer.Character
-        if char then
-            local hum = char:FindFirstChild("Humanoid")
-            if hum then hum.WalkSpeed = 16 end
-        end
-        ui.Status.Text = "Status: ⚡ Speed OFF"
-        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-    end
-end)
-
-utility.eggEnabled = false
-utility.eggConn = nil
-
-ui.eggToggle.btn.MouseButton1Click:Connect(function()
-    if not utility.eggReady then
-        ui.Status.Text = "Status: ❌ Auto Egg not ready"
+    local egg = findForestEgg()
+    if not egg then
+        ui.Status.Text = "Status: ❌ No Forest egg"
         ui.Status.TextColor3 = COLORS.RED
         return
     end
-    utility.eggEnabled = not utility.eggEnabled
-    setToggle(ui.eggToggle, utility.eggEnabled)
-    if utility.eggEnabled then
-        utility:startEgg()
-        ui.Status.Text = "Status: 🏞️ Auto Lake → Best ON"
-        ui.Status.TextColor3 = COLORS.GREEN
-    else
-        utility:stopEgg()
-        ui.Status.Text = "Status: 🏞️ Auto Lake → Best OFF"
-        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+
+    ui.Status.Text = "Status: 🚀 TP to Forest..."
+    ui.Status.TextColor3 = COLORS.GREEN
+
+    tpTo(egg.BoundsCFrame.Position)
+
+    task.wait(1)
+
+    -- Check kung naka-TP
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        local dist = (hrp.Position - egg.BoundsCFrame.Position).Magnitude
+        if dist < 15 then
+            ui.Status.Text = "Status: ✅ TP OK (dist: " .. math.floor(dist) .. ")"
+            ui.Status.TextColor3 = COLORS.GREEN
+        else
+            ui.Status.Text = "Status: ❌ TP REVERTED (dist: " .. math.floor(dist) .. ")"
+            ui.Status.TextColor3 = COLORS.RED
+        end
+    end
+end)
+
+ui.CheckButton.MouseButton1Click:Connect(function()
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        ui.Status.Text = "Pos: " .. math.floor(hrp.Position.X) .. ", " .. math.floor(hrp.Position.Y) .. ", " .. math.floor(hrp.Position.Z)
+        ui.Status.TextColor3 = COLORS.YELLOW
     end
 end)
 
 ui.CloseBtn.MouseButton1Click:Connect(function()
-    utility.speedEnabled = false
-    utility.eggEnabled = false
-    if utility.speedConn then utility.speedConn:Disconnect() end
-    utility:stopEgg()
     ui.ScreenGui:Destroy()
 end)
 
--- ============================================
--- STEP 9: INIT
--- ============================================
-task.spawn(function()
-    local eggOK, eggErr = utility:initEgg()
-    utility.eggReady = eggOK
-
-    if eggOK then
-        ui.Status.Text = "Status: ✅ Ready"
-        ui.Status.TextColor3 = COLORS.GREEN
-    else
-        ui.Status.Text = "Status: ❌ Egg init failed"
-        ui.Status.TextColor3 = COLORS.RED
-        warn("Egg: " .. tostring(eggErr))
-    end
-end)
+ui.Status.Text = "Status: ✅ Ready"
+ui.Status.TextColor3 = COLORS.GREEN
