@@ -1,5 +1,5 @@
 -- ============================================
--- 🌲 FOREST TP + CARRY
+-- 🌲 FOREST TP + CARRY EGG
 -- ============================================
 
 local Players = game:GetService("Players")
@@ -47,7 +47,7 @@ local function findForestEgg()
         LocalPlayer.Character
         and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 
-    local closest
+    local closest = nil
     local closestDistance = math.huge
 
     for _, egg in ipairs(data.Records) do
@@ -57,6 +57,7 @@ local function findForestEgg()
         and egg.BoundsCFrame then
 
             if hrp then
+
                 local distance =
                     (egg.BoundsCFrame.Position - hrp.Position).Magnitude
 
@@ -64,9 +65,12 @@ local function findForestEgg()
                     closestDistance = distance
                     closest = egg
                 end
+
             else
+
                 closest = egg
                 break
+
             end
         end
     end
@@ -75,7 +79,7 @@ local function findForestEgg()
 end
 
 -- ============================================
--- TP
+-- TP TO EGG
 -- ============================================
 
 local function tpToEgg(egg)
@@ -92,7 +96,7 @@ local function tpToEgg(egg)
         return false
     end
 
-    pcall(function()
+    local success = pcall(function()
 
         hrp.CFrame =
             CFrame.new(
@@ -105,11 +109,36 @@ local function tpToEgg(egg)
 
     end)
 
-    return true
+    return success
 end
 
 -- ============================================
--- CARRY
+-- CHECK IF CARRYING EGG
+-- ============================================
+
+local function hasEgg()
+
+    local char = LocalPlayer.Character
+
+    if not char then
+        return false
+    end
+
+    for _, obj in ipairs(char:GetChildren()) do
+
+        if obj:IsA("Tool")
+        and obj:GetAttribute("ItemType") == "AssetEgg" then
+
+            return true
+        end
+
+    end
+
+    return false
+end
+
+-- ============================================
+-- CARRY EGG
 -- ============================================
 
 local function carryEgg(egg)
@@ -118,38 +147,137 @@ local function carryEgg(egg)
         return false
     end
 
-    local success = false
+    -- ========================================
+    -- METHOD 1: CarryFieldEgg
+    -- ========================================
 
-    -- Main Carry method
     pcall(function()
 
         if EggState and EggState.CarryFieldEgg then
-
             EggState.CarryFieldEgg(egg.Uid)
-
-            success = true
-
         end
 
     end)
 
-    return success
+    task.wait(0.4)
+
+    if hasEgg() then
+        return true
+    end
+
+    -- ========================================
+    -- METHOD 2: FIND EGG MODEL
+    -- ========================================
+
+    local slots =
+        Workspace:FindFirstChild(
+            "AreaEggSlotsClient",
+            true
+        )
+
+    local model =
+        slots and slots:FindFirstChild(egg.Uid)
+        or Workspace:FindFirstChild(
+            egg.Uid,
+            true
+        )
+
+    if not model then
+        return false
+    end
+
+    -- ========================================
+    -- FIND PROMPT
+    -- ========================================
+
+    local prompt =
+        model:FindFirstChildWhichIsA(
+            "ProximityPrompt",
+            true
+        )
+
+    if not prompt then
+        return false
+    end
+
+    -- ========================================
+    -- FIRE PROMPT
+    -- ========================================
+
+    pcall(function()
+
+        prompt.Enabled = true
+        prompt.HoldDuration = 0
+        prompt.RequiresLineOfSight = false
+        prompt.MaxActivationDistance = 9999
+
+        if fireproximityprompt then
+            fireproximityprompt(prompt, 0)
+        end
+
+    end)
+
+    task.wait(0.5)
+
+    if hasEgg() then
+        return true
+    end
+
+    -- ========================================
+    -- METHOD 3: RETRY
+    -- ========================================
+
+    for i = 1, 5 do
+
+        if not enabled then
+            return false
+        end
+
+        pcall(function()
+
+            if fireproximityprompt then
+                fireproximityprompt(prompt, 0)
+            end
+
+        end)
+
+        pcall(function()
+
+            if EggState and EggState.CarryFieldEgg then
+                EggState.CarryFieldEgg(egg.Uid)
+            end
+
+        end)
+
+        task.wait(0.3)
+
+        if hasEgg() then
+            return true
+        end
+
+    end
+
+    return false
 end
 
 -- ============================================
 -- STATE
 -- ============================================
 
-local enabled = false
-local loopThread
+enabled = false
+local loopThread = nil
 
 -- ============================================
--- UI
+-- REMOVE OLD UI
 -- ============================================
 
 if CoreGui:FindFirstChild("ForestTPUI") then
     CoreGui.ForestTPUI:Destroy()
 end
+
+-- ============================================
+-- UI
+-- ============================================
 
 local Gui = Instance.new("ScreenGui")
 Gui.Name = "ForestTPUI"
@@ -165,13 +293,16 @@ Main.Active = true
 Main.Draggable = true
 Main.Parent = Gui
 
-Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
+Instance.new("UICorner", Main).CornerRadius =
+    UDim.new(0, 10)
 
 local Stroke = Instance.new("UIStroke")
 Stroke.Color = Color3.fromRGB(60, 60, 70)
 Stroke.Parent = Main
 
--- Title
+-- ============================================
+-- TITLE
+-- ============================================
 
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -20, 0, 35)
@@ -184,7 +315,9 @@ Title.Font = Enum.Font.GothamBold
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = Main
 
--- Label
+-- ============================================
+-- TP LABEL
+-- ============================================
 
 local Label = Instance.new("TextLabel")
 Label.Size = UDim2.new(0, 100, 0, 30)
@@ -197,7 +330,9 @@ Label.Font = Enum.Font.GothamBold
 Label.TextXAlignment = Enum.TextXAlignment.Left
 Label.Parent = Main
 
--- State
+-- ============================================
+-- STATE TEXT
+-- ============================================
 
 local State = Instance.new("TextLabel")
 State.Size = UDim2.new(0, 45, 0, 30)
@@ -209,7 +344,9 @@ State.TextSize = 13
 State.Font = Enum.Font.GothamBold
 State.Parent = Main
 
--- Toggle Track
+-- ============================================
+-- TOGGLE TRACK
+-- ============================================
 
 local Track = Instance.new("Frame")
 Track.Size = UDim2.new(0, 50, 0, 26)
@@ -218,7 +355,8 @@ Track.BackgroundColor3 = Color3.fromRGB(70,70,80)
 Track.BorderSizePixel = 0
 Track.Parent = Main
 
-Instance.new("UICorner", Track).CornerRadius = UDim.new(1,0)
+Instance.new("UICorner", Track).CornerRadius =
+    UDim.new(1,0)
 
 local Knob = Instance.new("Frame")
 Knob.Size = UDim2.new(0,20,0,20)
@@ -227,9 +365,12 @@ Knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
 Knob.BorderSizePixel = 0
 Knob.Parent = Track
 
-Instance.new("UICorner", Knob).CornerRadius = UDim.new(1,0)
+Instance.new("UICorner", Knob).CornerRadius =
+    UDim.new(1,0)
 
--- Button
+-- ============================================
+-- BUTTON
+-- ============================================
 
 local Button = Instance.new("TextButton")
 Button.Size = UDim2.new(0,110,0,45)
@@ -238,7 +379,9 @@ Button.BackgroundTransparency = 1
 Button.Text = ""
 Button.Parent = Main
 
--- Status
+-- ============================================
+-- STATUS
+-- ============================================
 
 local Status = Instance.new("TextLabel")
 Status.Size = UDim2.new(1,-30,0,25)
@@ -282,11 +425,10 @@ local function setToggle(value)
             Color3.fromRGB(200,50,50)
 
     end
-
 end
 
 -- ============================================
--- MAIN
+-- MAIN LOOP
 -- ============================================
 
 local function run()
@@ -295,26 +437,31 @@ local function run()
 
     if not egg then
 
-        Status.Text = "Status: ⚠️ No Forest egg"
+        Status.Text =
+            "Status: ⚠️ No Forest egg"
+
         Status.TextColor3 =
             Color3.fromRGB(255,200,0)
 
         return
-
     end
 
-    Status.Text = "Status: 🌲 TP Forest..."
+    -- TP
+    Status.Text =
+        "Status: 🌲 TP Forest..."
+
     Status.TextColor3 =
         Color3.fromRGB(0,180,90)
 
     if not tpToEgg(egg) then
 
-        Status.Text = "Status: ❌ TP failed"
+        Status.Text =
+            "Status: ❌ TP failed"
+
         Status.TextColor3 =
             Color3.fromRGB(200,50,50)
 
         return
-
     end
 
     task.wait(0.3)
@@ -323,26 +470,36 @@ local function run()
         return
     end
 
-    Status.Text = "Status: 🥚 Carrying..."
+    -- CARRY
+    Status.Text =
+        "Status: 🥚 Carrying..."
+
     Status.TextColor3 =
         Color3.fromRGB(255,200,0)
 
-    carryEgg(egg)
+    local grabbed = carryEgg(egg)
 
-    task.wait(0.5)
+    if grabbed then
 
-    if enabled then
+        Status.Text =
+            "Status: ✅ Egg carried"
 
-        Status.Text = "Status: ✅ Forest egg"
         Status.TextColor3 =
             Color3.fromRGB(0,180,90)
 
-    end
+    else
 
+        Status.Text =
+            "Status: ❌ Carry failed"
+
+        Status.TextColor3 =
+            Color3.fromRGB(200,50,50)
+
+    end
 end
 
 -- ============================================
--- BUTTON
+-- TOGGLE
 -- ============================================
 
 Button.MouseButton1Click:Connect(function()
@@ -353,7 +510,9 @@ Button.MouseButton1Click:Connect(function()
 
     if enabled then
 
-        Status.Text = "Status: 🎯 Starting..."
+        Status.Text =
+            "Status: 🎯 Starting..."
+
         Status.TextColor3 =
             Color3.fromRGB(0,180,90)
 
@@ -363,7 +522,6 @@ Button.MouseButton1Click:Connect(function()
 
                 pcall(run)
 
-                -- Hindi paulit-ulit nang sobrang bilis
                 task.wait(1)
 
             end
@@ -372,18 +530,27 @@ Button.MouseButton1Click:Connect(function()
 
     else
 
-        Status.Text = "Status: ⏸ Stopped"
+        Status.Text =
+            "Status: ⏸ Stopped"
+
         Status.TextColor3 =
             Color3.fromRGB(255,200,0)
 
         if loopThread then
+
             pcall(function()
                 task.cancel(loopThread)
             end)
 
             loopThread = nil
+
         end
-
     end
-
 end)
+
+-- ============================================
+-- READY
+-- ============================================
+
+Status.Text = "Status: ✅ Ready"
+Status.TextColor3 = Color3.fromRGB(0,180,90)
