@@ -23,7 +23,6 @@ local utility = {
 -- ============================================
 getgenv().config = {
     speedValue = 260,
-    tpBeforeGrab = true,
 }
 
 -- ============================================
@@ -147,7 +146,7 @@ function utility:stopAntiRagdoll()
 end
 
 -- ============================================
--- STEP 7: LONG RANGE AUTO-GRAB (drop / hit / ragdoll)
+-- STEP 7: LONG RANGE PICKUP (walang TP)
 -- ============================================
 utility.longGrabEnabled = false
 utility.longGrabConn = nil
@@ -163,20 +162,6 @@ function utility:getCurrentEggUid()
         end
     end
     return nil
-end
-
-function utility:tpTo(pos)
-    local char = self.LocalPlayer.Character
-    if not char then return false end
-    pcall(function()
-        char:PivotTo(CFrame.new(pos + Vector3.new(0, 3, 0)))
-    end)
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if hrp then
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.AssemblyAngularVelocity = Vector3.zero
-    end
-    return true
 end
 
 function utility:startLongGrab()
@@ -206,11 +191,10 @@ function utility:startLongGrab()
             return
         end
 
-        -- ❌ Wala nang egg — na-drop / na-hit / na-ragdoll!
+        -- ❌ Wala nang egg — na-drop / na-hit / na-ragdoll
         if not utility.lastEggUid then return end
 
-        -- 🔍 Hanapin yung egg KAHIT SAAN (walang radius limit)
-        local bestObj = nil
+        -- 🔍 Hanapin yung egg MO (walang radius limit)
         local bestPrompt = nil
         local bestDist = math.huge
 
@@ -236,34 +220,24 @@ function utility:startLongGrab()
 
                     local dist = (obj.Position - hrp.Position).Magnitude
 
-                    -- Priority: UID match muna
-                    if isUidMatch then
-                        if dist < bestDist then
-                            bestObj = obj
-                            bestPrompt = prompt
-                            bestDist = dist
-                        end
+                    if isUidMatch and dist < bestDist then
+                        bestPrompt = prompt
+                        bestDist = dist
                     end
                 end
             end
         end
 
-        -- ⚡ TP + GRAB
-        if bestObj and bestPrompt then
-            print("[LongGrab] Found at " .. math.floor(bestDist) .. " studs")
-            
-            if getgenv().config.tpBeforeGrab then
-                utility:tpTo(bestObj.Position)
-                task.wait(0.1)
-            end
-            
+        -- ⚡ LONG RANGE GRAB — WALANG TP
+        if bestPrompt then
             pcall(function()
                 bestPrompt.HoldDuration = 0
+                bestPrompt.MaxActivationDistance = 999999   -- ✅ Long range
                 fireproximityprompt(bestPrompt, 0)
             end)
             
+            print("[LongGrab] ✅ Long-range grabbed at " .. math.floor(bestDist) .. " studs")
             utility.grabCooldown = tick() + 0.5
-            print("[LongGrab] ✅ Grabbed!")
         end
     end)
 
@@ -399,7 +373,7 @@ local function createUI()
     local speedToggle = makeToggle(50, "Speed Bypass", "⚡")
     local pickupToggle = makeToggle(95, "Instant Pickup", "⚡")
     local ragdollToggle = makeToggle(140, "Anti-Ragdoll", "🛡️")
-    local longGrabToggle = makeToggle(185, "Long Range Grab", "🔍")
+    local longGrabToggle = makeToggle(185, "Long Range Pickup", "🔍")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
@@ -517,7 +491,7 @@ ui.ragdollToggle.btn.MouseButton1Click:Connect(function()
     end
 end)
 
--- 🔍 Long Range Grab
+-- 🔍 Long Range Pickup
 utility.longGrabEnabled = false
 
 ui.longGrabToggle.btn.MouseButton1Click:Connect(function()
