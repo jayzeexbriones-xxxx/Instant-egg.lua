@@ -26,10 +26,11 @@ utility.areas = {
 }
 
 getgenv().config = {
-    speedValue = 250,
-    chickenAreas = 3,
-    minArea = 9,
-    knockbackThreshold = 25,
+    speedValue = 250,           -- ⚡ 250 para mabilis ma-tuka
+    basePos = Vector3.new(514, 71, -368),
+    chickenAreas = 3,           -- Areas 1-3 = chicken
+    minArea = 9,                -- Best egg = area 9+
+    knockbackThreshold = 25,    -- Sensitivity ng tuka detection
 }
 
 -- ============================================
@@ -146,6 +147,7 @@ function utility:hasEgg()
     return false
 end
 
+-- ⚡ VELOCITY-BASED PECK DETECTION
 function utility:startVelocityWatcher(callback)
     local char = self.LocalPlayer.Character
     if not char then return end
@@ -202,7 +204,7 @@ function utility:initEgg()
 end
 
 -- ============================================
--- STEP 6: AUTO EGG (Chicken → Best Egg → STAY)
+-- STEP 6: LENNON STYLE AUTO EGG
 -- ============================================
 function utility:startEgg()
     if self.eggConn then pcall(function() task.cancel(self.eggConn) end) end
@@ -213,67 +215,56 @@ function utility:startEgg()
                 local myPos = myChar and myChar.HumanoidRootPart.Position
                 if not myPos then task.wait(0.3) return end
                 
-                -- 1. TP sa chicken egg
-                local chickenEgg = self:getChickenEgg()
-                if not chickenEgg then
+                local hasEgg = self:hasEgg()
+                
+                -- STEP 1: May dala? → base
+                if hasEgg then
+                    self:TeleportTo(getgenv().config.basePos)
                     task.wait(0.5)
-                    return
-                end
-                
-                ui.Status.Text = "Status: 🐔 TP to chicken..."
-                ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-                
-                self:TeleportTo(chickenEgg.BoundsCFrame.Position)
-                task.wait(0.3)
-                
-                -- 2. Grab chicken egg
-                ui.Status.Text = "Status: 🥚 Grabbing chicken..."
-                local p = self:getproximitypromptforegg(chickenEgg)
-                if p then
-                    pcall(function() fireproximityprompt(p, 0, true) end)
-                end
-                task.wait(0.2)
-                
-                -- 3. Hintayin ma-tuka
-                ui.Status.Text = "Status: 🐔 Waiting for peck..."
-                ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-                
-                local pecked = false
-                local conn = self:startVelocityWatcher(function()
-                    pecked = true
-                end)
-                
-                local waitTime = 0
-                while waitTime < 5 and not pecked do
-                    task.wait(0.1)
-                    waitTime = waitTime + 0.1
-                end
-                
-                if conn then conn:Disconnect() end
-                
-                -- 4. Pag na-tuka → TP sa best egg → STAY
-                if pecked then
-                    ui.Status.Text = "Status: 🎯 TP to best egg..."
-                    ui.Status.TextColor3 = Color3.fromRGB(0, 180, 90)
-                    
-                    local bestEgg = self:getBestEgg()
-                    if bestEgg then
-                        self:TeleportTo(bestEgg.BoundsCFrame.Position)
+                else
+                    -- STEP 2: Wala pa → chicken egg muna
+                    local chickenEgg = self:getChickenEgg()
+                    if chickenEgg then
+                        self:TeleportTo(chickenEgg.BoundsCFrame.Position)
                         task.wait(0.3)
                         
-                        -- Grab best egg
-                        local bp = self:getproximitypromptforegg(bestEgg)
-                        if bp then
-                            pcall(function() fireproximityprompt(bp, 0, true) end)
+                        local p = self:getproximitypromptforegg(chickenEgg)
+                        if p then
+                            pcall(function() fireproximityprompt(p, 0, true) end)
                         end
-                        task.wait(0.2)
                         
-                        -- ✅ STAY LANG DITO — WALANG RETURN BASE
-                        ui.Status.Text = "Status: 🏠 Stay at best egg"
-                        ui.Status.TextColor3 = Color3.fromRGB(0, 180, 90)
+                        -- STEP 3: Hintayin TUKA (velocity trigger)
+                        local pecked = false
+                        local conn = self:startVelocityWatcher(function()
+                            pecked = true
+                        end)
                         
-                        -- Reset — next cycle babalik sa chicken
-                        task.wait(1)
+                        local waitTime = 0
+                        while waitTime < 5 and not pecked do
+                            task.wait(0.1)
+                            waitTime = waitTime + 0.1
+                        end
+                        
+                        if conn then conn:Disconnect() end
+                        
+                        -- STEP 4: Pag na-tuka → best egg → kunin → base
+                        if pecked then
+                            local bestEgg = self:getBestEgg()
+                            if bestEgg then
+                                self:TeleportTo(bestEgg.BoundsCFrame.Position)
+                                task.wait(0.3)
+                                
+                                local bp = self:getproximitypromptforegg(bestEgg)
+                                if bp then
+                                    pcall(function() fireproximityprompt(bp, 0, true) end)
+                                end
+                                task.wait(0.3)
+                                
+                                -- Dalhin sa base
+                                self:TeleportTo(getgenv().config.basePos)
+                                task.wait(0.5)
+                            end
+                        end
                     end
                 end
             end)
@@ -298,6 +289,7 @@ local COLORS = {
     TITLE_BG = Color3.fromRGB(35, 35, 42),
     STROKE = Color3.fromRGB(60, 60, 70),
     TEXT = Color3.fromRGB(255, 255, 255),
+    SUBTEXT = Color3.fromRGB(180, 180, 190),
     GREEN = Color3.fromRGB(0, 180, 90),
     RED = Color3.fromRGB(200, 50, 50),
     KNOB = Color3.fromRGB(255, 255, 255),
