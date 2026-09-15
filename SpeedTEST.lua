@@ -23,8 +23,7 @@ local utility = {
 -- ============================================
 getgenv().config = {
     speedValue = 260,
-    autoGrabRadius = 30,
-    positionFallbackRadius = 15,
+    forestX = 700,           -- 🌲 X coordinate ng Forest area
 }
 
 -- ============================================
@@ -148,123 +147,114 @@ function utility:stopAntiRagdoll()
 end
 
 -- ============================================
--- STEP 7: AUTO-GRAB DROPPED EGG (yours only)
+-- STEP 7: GET PLOT POSITION
 -- ============================================
-utility.autoGrabEnabled = false
-utility.autoGrabConn = nil
-utility.lastEggUid = nil
-utility.lastEggPos = nil
-utility.grabCooldown = 0
-
-function utility:getCurrentEggUid()
-    local char = self.LocalPlayer.Character
-    if not char then return nil end
-    for _, tool in next, char:GetChildren() do
-        if tool:IsA("Tool") and tool:GetAttribute("ItemType") == "AssetEgg" then
-            return tool:GetAttribute("UID") or tool:GetAttribute("Uid")
+function utility:getPlotPosition()
+    local ok, pos = pcall(function()
+        local client = ReplicatedStorage:FindFirstChild("Client")
+        if not client then return nil end
+        local ps = client:FindFirstChild("PlotState")
+        if not ps then return nil end
+        local PlotState = require(ps)
+        if not PlotState then return nil end
+        
+        local plot = PlotState.ResolvePlot()
+        if plot and plot.CenterPoint then
+            return plot.CenterPoint.Position
         end
-    end
+        return nil
+    end)
+    if ok and pos then return pos end
     return nil
 end
 
-function utility:startAutoGrab()
+-- ============================================
+-- STEP 8: AUTO TP SA PLOT PAG MAY EGG + FOREST
+-- ============================================
+utility.autoTpEnabled = false
+utility.autoTpConn = nil
+utility.hasTpDone = false
+
+function utility:hasEgg()
+    local char = self.LocalPlayer.Character
+    if not char then return false end
+    for _, tool in next, char:GetChildren() do
+        if tool:IsA("Tool") and tool:GetAttribute("ItemType") == "AssetEgg" then
+            return true
+        end
+    end
+    return false
+end
+
+function utility:startAutoTP()
     self.LocalPlayer = self.Players.LocalPlayer
     if not self.LocalPlayer then return false, "No LocalPlayer" end
-    if not fireproximityprompt then return false, "Missing fireproximityprompt" end
 
-    utility.lastEggUid = nil
-    utility.lastEggPos = nil
-    utility.grabCooldown = 0
+    utility.hasTpDone = false
 
-    utility.autoGrabConn = self.RunService.Heartbeat:Connect(function()
-        if not utility.autoGrabEnabled then return end
-
-        local now = tick()
-        if now < utility.grabCooldown then return end
+    utility.autoTpConn = self.RunService.Heartbeat:Connect(function()
+        if not utility.autoTpEnabled then return end
 
         local char = self.LocalPlayer.Character
         if not char then return end
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
 
-        -- 🎯 Check kung may egg sa character
-        local currentUid = utility:getCurrentEggUid()
-
-        if currentUid then
-            utility.lastEggUid = currentUid
-            utility.lastEggPos = hrp.Position
-            return
-        end
-
-        if not utility.lastEggUid then return end
-
-        -- 🔍 Hanapin yung DROPPED egg
-        local myPos = hrp.Position
-        local closestPrompt = nil
-        local closestDist = getgenv().config.autoGrabRadius
-
-        for _, obj in next, self.Workspace:GetDescendants() do
-            if obj:IsA("BasePart") and obj.Name:lower():find("egg") then
-                local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt")
-                if not prompt and obj.Parent then
-                    prompt = obj.Parent:FindFirstChildWhichIsA("ProximityPrompt")
-                    if not prompt and obj.Parent.Parent then
-                        prompt = obj.Parent.Parent:FindFirstChildWhichIsA("ProximityPrompt")
-                    end
-                end
-
-                if prompt then
-                    local eggUid = obj:GetAttribute("UID") 
-                        or obj:GetAttribute("Uid")
-                        or (obj.Parent and (obj.Parent:GetAttribute("UID") or obj.Parent:GetAttribute("Uid")))
-                    
-                    local matchUid = false
-                    if eggUid and utility.lastEggUid then
-                        matchUid = tostring(eggUid) == tostring(utility.lastEggUid)
-                    end
-
-                    local matchPos = false
-                    if utility.lastEggPos then
-                        local distFromDrop = (obj.Position - utility.lastEggPos).Magnitude
-                        matchPos = distFromDrop <= getgenv().config.positionFallbackRadius
-                    end
-
-                    if matchUid or matchPos then
-                        local dist = (obj.Position - myPos).Magnitude
-                        if dist < closestDist then
-                            closestDist = dist
-                            closestPrompt = prompt
-                        end
-                    end
-                end
+        -- ✅ Check kung may egg
+        local hasEgg = false
+        for _, tool in next, char:GetChildren() do
+            if tool:IsA("Tool") and tool:GetAttribute("ItemType") == "AssetEgg" then
+                hasEgg = true
+                break
             end
         end
 
-        if closestPrompt then
-            pcall(function()
-                closestPrompt.HoldDuration = 0
-                fireproximityprompt(closestPrompt, 0)
-            end)
-            print("[AutoGrab] ✅ Grabbed YOUR dropped egg at " .. math.floor(closestDist) .. " studs")
-            utility.grabCooldown = tick() + 0.5
+        -- ❌ Walang egg → reset flag, skip
+        if not hasEgg then
+            utility.hasTpDone = false
+            return
+        end
+
+        -- 🌲 Check kung nasa Forest area na
+        local pos = hrp.Position
+        if pos.X < getgenv().config.forestX then
+            if not utility.hasTpDone then
+                -- 🏠 Get plot position
+                local plotPos = utility:getPlotPosition()
+                if plotPos then
+                    -- ⚡ TP sa plot
+                    pcall(function()
+                        char:PivotTo(CFrame.new(plotPos + Vector3.new(0, 3, 0)))
+                    end)
+                    
+                    local h = char:FindFirstChild("HumanoidRootPart")
+                    if h then
+                        h.AssemblyLinearVelocity = Vector3.zero
+                        h.AssemblyAngularVelocity = Vector3.zero
+                    end
+                    
+                    utility.hasTpDone = true
+                    print("[AutoTP] ✅ TP to plot (may egg + Forest)")
+                else
+                    print("[AutoTP] ⚠️ Plot position not found")
+                end
+            end
         end
     end)
 
     return true
 end
 
-function utility:stopAutoGrab()
-    if utility.autoGrabConn then
-        utility.autoGrabConn:Disconnect()
-        utility.autoGrabConn = nil
+function utility:stopAutoTP()
+    if utility.autoTpConn then
+        utility.autoTpConn:Disconnect()
+        utility.autoTpConn = nil
     end
-    utility.lastEggUid = nil
-    utility.lastEggPos = nil
-    utility.grabCooldown = 0
+    utility.hasTpDone = false
 end
 
 -- ============================================
--- STEP 8: UI
+-- STEP 9: UI
 -- ============================================
 local COLORS = {
     BG = Color3.fromRGB(25, 25, 30),
@@ -383,7 +373,7 @@ local function createUI()
     local speedToggle = makeToggle(50, "Speed Bypass", "⚡")
     local pickupToggle = makeToggle(95, "Instant Pickup", "⚡")
     local ragdollToggle = makeToggle(140, "Anti-Ragdoll", "🛡️")
-    local autoGrabToggle = makeToggle(185, "Auto-Grab My Drop", "🥚")
+    local autoTPToggle = makeToggle(185, "Auto-TP to Plot", "🏠")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
@@ -398,13 +388,13 @@ local function createUI()
     return {
         ScreenGui = ScreenGui, Main = Main,
         speedToggle = speedToggle, pickupToggle = pickupToggle,
-        ragdollToggle = ragdollToggle, autoGrabToggle = autoGrabToggle,
+        ragdollToggle = ragdollToggle, autoTPToggle = autoTPToggle,
         Status = Status, CloseBtn = CloseBtn
     }
 end
 
 -- ============================================
--- STEP 9: STATE + WIRING
+-- STEP 10: STATE + WIRING
 -- ============================================
 local ui = createUI()
 
@@ -501,28 +491,28 @@ ui.ragdollToggle.btn.MouseButton1Click:Connect(function()
     end
 end)
 
--- 🥚 Auto-Grab My Dropped Egg
-utility.autoGrabEnabled = false
+-- 🏠 Auto-TP to Plot
+utility.autoTpEnabled = false
 
-ui.autoGrabToggle.btn.MouseButton1Click:Connect(function()
-    utility.autoGrabEnabled = not utility.autoGrabEnabled
-    setToggle(ui.autoGrabToggle, utility.autoGrabEnabled)
+ui.autoTPToggle.btn.MouseButton1Click:Connect(function()
+    utility.autoTpEnabled = not utility.autoTpEnabled
+    setToggle(ui.autoTPToggle, utility.autoTpEnabled)
     
-    if utility.autoGrabEnabled then
-        local ok, err = utility:startAutoGrab()
+    if utility.autoTpEnabled then
+        local ok, err = utility:startAutoTP()
         if ok then
-            ui.Status.Text = "Status: 🥚 Auto-Grab ON"
+            ui.Status.Text = "Status: 🏠 Auto-TP ON"
             ui.Status.TextColor3 = COLORS.GREEN
         else
-            ui.Status.Text = "Status: ❌ Auto-Grab failed"
+            ui.Status.Text = "Status: ❌ Auto-TP failed"
             ui.Status.TextColor3 = COLORS.RED
-            utility.autoGrabEnabled = false
-            setToggle(ui.autoGrabToggle, false)
-            warn("Auto-Grab: " .. tostring(err))
+            utility.autoTpEnabled = false
+            setToggle(ui.autoTPToggle, false)
+            warn("Auto-TP: " .. tostring(err))
         end
     else
-        utility:stopAutoGrab()
-        ui.Status.Text = "Status: 🥚 Auto-Grab OFF"
+        utility:stopAutoTP()
+        ui.Status.Text = "Status: 🏠 Auto-TP OFF"
         ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
     end
 end)
@@ -532,16 +522,16 @@ ui.CloseBtn.MouseButton1Click:Connect(function()
     utility.speedEnabled = false
     utility.pickupEnabled = false
     utility.antiRagdollEnabled = false
-    utility.autoGrabEnabled = false
+    utility.autoTpEnabled = false
     if utility.speedConn then utility.speedConn:Disconnect() end
     utility:stopInstantPickup()
     utility:stopAntiRagdoll()
-    utility:stopAutoGrab()
+    utility:stopAutoTP()
     ui.ScreenGui:Destroy()
 end)
 
 -- ============================================
--- STEP 10: INIT
+-- STEP 11: INIT
 -- ============================================
 ui.Status.Text = "Status: ✅ Ready"
 ui.Status.TextColor3 = COLORS.GREEN
