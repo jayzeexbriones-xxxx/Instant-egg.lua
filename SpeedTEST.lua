@@ -23,6 +23,7 @@ local utility = {
 -- ============================================
 getgenv().config = {
     speedValue = 260,
+    tpOffset = Vector3.new(0, 3, 0),   -- TP offset
 }
 
 -- ============================================
@@ -146,10 +147,10 @@ function utility:stopAntiRagdoll()
 end
 
 -- ============================================
--- STEP 7: LONG RANGE PICKUP (walang TP)
+-- STEP 7: TP TO DROPPED EGG
 -- ============================================
-utility.longGrabEnabled = false
-utility.longGrabConn = nil
+utility.tpGrabEnabled = false
+utility.tpGrabConn = nil
 utility.lastEggUid = nil
 utility.grabCooldown = 0
 
@@ -164,7 +165,21 @@ function utility:getCurrentEggUid()
     return nil
 end
 
-function utility:startLongGrab()
+function utility:tpTo(pos)
+    local char = self.LocalPlayer.Character
+    if not char then return false end
+    pcall(function()
+        char:PivotTo(CFrame.new(pos + getgenv().config.tpOffset))
+    end)
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+    end
+    return true
+end
+
+function utility:startTpGrab()
     self.LocalPlayer = self.Players.LocalPlayer
     if not self.LocalPlayer then return false, "No LocalPlayer" end
     if not fireproximityprompt then return false, "Missing fireproximityprompt" end
@@ -172,8 +187,8 @@ function utility:startLongGrab()
     utility.lastEggUid = nil
     utility.grabCooldown = 0
 
-    utility.longGrabConn = self.RunService.Heartbeat:Connect(function()
-        if not utility.longGrabEnabled then return end
+    utility.tpGrabConn = self.RunService.Heartbeat:Connect(function()
+        if not utility.tpGrabEnabled then return end
 
         local now = tick()
         if now < utility.grabCooldown then return end
@@ -191,10 +206,11 @@ function utility:startLongGrab()
             return
         end
 
-        -- ❌ Wala nang egg — na-drop / na-hit / na-ragdoll
+        -- ❌ Wala nang egg — na-drop!
         if not utility.lastEggUid then return end
 
-        -- 🔍 Hanapin yung egg MO (walang radius limit)
+        -- 🔍 Hanapin yung egg MO
+        local bestObj = nil
         local bestPrompt = nil
         local bestDist = math.huge
 
@@ -221,6 +237,7 @@ function utility:startLongGrab()
                     local dist = (obj.Position - hrp.Position).Magnitude
 
                     if isUidMatch and dist < bestDist then
+                        bestObj = obj
                         bestPrompt = prompt
                         bestDist = dist
                     end
@@ -228,26 +245,32 @@ function utility:startLongGrab()
             end
         end
 
-        -- ⚡ LONG RANGE GRAB — WALANG TP
-        if bestPrompt then
+        -- ⚡ TP + GRAB
+        if bestObj and bestPrompt then
+            print("[TP-Grab] Found at " .. math.floor(bestDist) .. " studs — TP + grab")
+            
+            -- 🚀 TP sa egg
+            utility:tpTo(bestObj.Position)
+            task.wait(0.1)
+            
+            -- 🥚 Grab
             pcall(function()
                 bestPrompt.HoldDuration = 0
-                bestPrompt.MaxActivationDistance = 999999   -- ✅ Long range
                 fireproximityprompt(bestPrompt, 0)
             end)
             
-            print("[LongGrab] ✅ Long-range grabbed at " .. math.floor(bestDist) .. " studs")
             utility.grabCooldown = tick() + 0.5
+            print("[TP-Grab] ✅ Grabbed!")
         end
     end)
 
     return true
 end
 
-function utility:stopLongGrab()
-    if utility.longGrabConn then
-        utility.longGrabConn:Disconnect()
-        utility.longGrabConn = nil
+function utility:stopTpGrab()
+    if utility.tpGrabConn then
+        utility.tpGrabConn:Disconnect()
+        utility.tpGrabConn = nil
     end
     utility.lastEggUid = nil
     utility.grabCooldown = 0
@@ -373,7 +396,7 @@ local function createUI()
     local speedToggle = makeToggle(50, "Speed Bypass", "⚡")
     local pickupToggle = makeToggle(95, "Instant Pickup", "⚡")
     local ragdollToggle = makeToggle(140, "Anti-Ragdoll", "🛡️")
-    local longGrabToggle = makeToggle(185, "Long Range Pickup", "🔍")
+    local tpGrabToggle = makeToggle(185, "TP to Dropped Egg", "🚀")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
@@ -388,7 +411,7 @@ local function createUI()
     return {
         ScreenGui = ScreenGui, Main = Main,
         speedToggle = speedToggle, pickupToggle = pickupToggle,
-        ragdollToggle = ragdollToggle, longGrabToggle = longGrabToggle,
+        ragdollToggle = ragdollToggle, tpGrabToggle = tpGrabToggle,
         Status = Status, CloseBtn = CloseBtn
     }
 end
@@ -491,28 +514,28 @@ ui.ragdollToggle.btn.MouseButton1Click:Connect(function()
     end
 end)
 
--- 🔍 Long Range Pickup
-utility.longGrabEnabled = false
+-- 🚀 TP to Dropped Egg
+utility.tpGrabEnabled = false
 
-ui.longGrabToggle.btn.MouseButton1Click:Connect(function()
-    utility.longGrabEnabled = not utility.longGrabEnabled
-    setToggle(ui.longGrabToggle, utility.longGrabEnabled)
+ui.tpGrabToggle.btn.MouseButton1Click:Connect(function()
+    utility.tpGrabEnabled = not utility.tpGrabEnabled
+    setToggle(ui.tpGrabToggle, utility.tpGrabEnabled)
     
-    if utility.longGrabEnabled then
-        local ok, err = utility:startLongGrab()
+    if utility.tpGrabEnabled then
+        local ok, err = utility:startTpGrab()
         if ok then
-            ui.Status.Text = "Status: 🔍 Long Range ON"
+            ui.Status.Text = "Status: 🚀 TP-Grab ON"
             ui.Status.TextColor3 = COLORS.GREEN
         else
-            ui.Status.Text = "Status: ❌ Long Range failed"
+            ui.Status.Text = "Status: ❌ TP-Grab failed"
             ui.Status.TextColor3 = COLORS.RED
-            utility.longGrabEnabled = false
-            setToggle(ui.longGrabToggle, false)
-            warn("Long Range: " .. tostring(err))
+            utility.tpGrabEnabled = false
+            setToggle(ui.tpGrabToggle, false)
+            warn("TP-Grab: " .. tostring(err))
         end
     else
-        utility:stopLongGrab()
-        ui.Status.Text = "Status: 🔍 Long Range OFF"
+        utility:stopTpGrab()
+        ui.Status.Text = "Status: 🚀 TP-Grab OFF"
         ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
     end
 end)
@@ -522,11 +545,11 @@ ui.CloseBtn.MouseButton1Click:Connect(function()
     utility.speedEnabled = false
     utility.pickupEnabled = false
     utility.antiRagdollEnabled = false
-    utility.longGrabEnabled = false
+    utility.tpGrabEnabled = false
     if utility.speedConn then utility.speedConn:Disconnect() end
     utility:stopInstantPickup()
     utility:stopAntiRagdoll()
-    utility:stopLongGrab()
+    utility:stopTpGrab()
     ui.ScreenGui:Destroy()
 end)
 
