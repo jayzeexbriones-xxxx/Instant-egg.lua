@@ -11,247 +11,287 @@ end)
 local utility = {
     RunService = game:GetService("RunService"),
     Players = game:GetService("Players"),
-    ProximityPromptService = game:GetService("ProximityPromptService"),
-    ReplicatedStorage = game:GetService("ReplicatedStorage"),
     Workspace = game:GetService("Workspace"),
-    CoreGui = game:GetService("CoreGui"),
-    conns = {},
+    ReplicatedStorage = game:GetService("ReplicatedStorage"),
+    CoreGui = game:GetService("CoreGui")
 }
 
 -- ============================================
 -- STEP 3: CONFIG
 -- ============================================
+utility.areas = {
+    "Forest", "Lake", "Desert", "Jungle", "Snow",
+    "Volcano", "Abyss Ocean", "Prehistoric", "Cosmic",
+    "Cherry Blossom", "Titan Temple",
+}
+
 getgenv().config = {
-    speedValue = 260,
+    speedValue = 250,
+    chickenAreas = 3,
+    minArea = 9,
+    knockbackThreshold = 25,
 }
 
 -- ============================================
--- STEP 4: BIND/UNBIND HELPERS
+-- STEP 4: EGG LOGIC
 -- ============================================
-function utility:bind(connection, callback)
+function utility:getChickenEgg()
     local s, r = pcall(function(...)
-        local conn = connection:Connect(callback)
-        self.conns[conn] = conn
-        return self.conns[conn]
+        local egg = nil
+        local closestDist = math.huge
+        local myPos = self.LocalPlayer.Character and self.LocalPlayer.Character.HumanoidRootPart.Position
+        if not myPos then return nil end
+        
+        for key, data in next, self.EggState.ReadFieldEggs().Records do
+            local idx = table.find(self.areas, data.AreaId)
+            if idx and idx <= getgenv().config.chickenAreas then
+                local dist = (data.BoundsCFrame.Position - myPos).Magnitude
+                if dist < closestDist then
+                    closestDist = dist
+                    egg = data
+                end
+            end
+        end
+        return egg
     end)
     if s and r then return r end
-    return warn('failed to bind: '..tostring(r))
+    return nil
 end
 
-function utility:unbind(connection)
+function utility:getBestEgg()
     local s, r = pcall(function(...)
-        local conn = self.conns[connection]
-        if conn then
-            conn:Disconnect()
-            self.conns[connection] = nil
-            return true
+        local egg = nil
+        local biggestegg = 0
+        for key, data in next, self.EggState.ReadFieldEggs().Records do
+            local idx = table.find(self.areas, data.AreaId)
+            if idx and idx > getgenv().config.minArea then
+                if data.AssetScale > biggestegg then
+                    biggestegg = data.AssetScale
+                    egg = data
+                end
+            end
+        end
+        return egg
+    end)
+    if s and r then return r end
+    return nil
+end
+
+function utility:TeleportTo(pos)
+    local char = self.LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    pcall(function()
+        hrp.CFrame = CFrame.new(pos)
+    end)
+end
+
+function utility:getproximitypromptforegg(egg)
+    local s, r = pcall(function(...)
+        local eggPos = egg.BoundsCFrame.Position
+        local closestPrompt = nil
+        local closestDist = math.huge
+
+        for _, prompt in next, self.Workspace:GetDescendants() do
+            if prompt:IsA("ProximityPrompt") and prompt.Enabled then
+                local parent = prompt.Parent
+                if parent then
+                    local pPos = parent:IsA("BasePart") and parent.Position or (parent:FindFirstChildWhichIsA("BasePart") and parent:FindFirstChildWhichIsA("BasePart").Position)
+                    if pPos then
+                        local dist = (eggPos - pPos).Magnitude
+                        if dist < closestDist and dist < 15 then
+                            closestDist = dist
+                            closestPrompt = prompt
+                        end
+                    end
+                end
+            end
+        end
+
+        if not closestPrompt then
+            local CarryAreaEggs = self.Workspace:QueryDescendants("#CarryAreaEgg")
+            for _, prompt in next, CarryAreaEggs do
+                if prompt:IsA("ProximityPrompt") then
+                    local p = prompt.Parent
+                    if p and p:IsA("BasePart") then
+                        local dist = (eggPos - p.Position).Magnitude
+                        if dist < closestDist then
+                            closestDist = dist
+                            closestPrompt = prompt
+                        end
+                    end
+                end
+            end
+        end
+
+        return closestPrompt
+    end)
+    if s and r then return r end
+    return nil
+end
+
+function utility:hasEgg()
+    local s, r = pcall(function(...)
+        local char = self.LocalPlayer.Character
+        if not char then return false end
+        for _, obj in next, char:GetChildren() do
+            if obj.Name:lower():find("egg") then
+                return true
+            end
         end
         return false
     end)
-    if s and r then return true end
-    return warn("failed to unbind")
+    if s and r then return r end
+    return false
 end
 
--- ============================================
--- STEP 5: INSTANT PICKUP
--- ============================================
-function utility:startInstantPickup()
-    self.LocalPlayer = self.Players.LocalPlayer
-    if not self.LocalPlayer then return warn('no localplayer') end
-
-    self.instantConn = self:bind(self.ProximityPromptService.PromptButtonHoldBegan, function(ProximityPrompt, Player)
-        if Player == self.LocalPlayer and tostring(ProximityPrompt) == "CarryAreaEgg" then
-            ProximityPrompt.HoldDuration = 0
+function utility:startVelocityWatcher(callback)
+    local char = self.LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    
+    local connection
+    connection = utility.RunService.Heartbeat:Connect(function()
+        if not utility.eggEnabled then
+            connection:Disconnect()
+            return
+        end
+        
+        local currentChar = utility.LocalPlayer.Character
+        if not currentChar then
+            connection:Disconnect()
+            return
+        end
+        
+        local currentHRP = currentChar:FindFirstChild("HumanoidRootPart")
+        if not currentHRP then return end
+        
+        local velocity = currentHRP.AssemblyLinearVelocity
+        local speed = velocity.Magnitude
+        
+        if speed > getgenv().config.knockbackThreshold then
+            connection:Disconnect()
+            callback()
         end
     end)
-
-    return self.instantConn ~= nil
-end
-
-function utility:stopInstantPickup()
-    if self.instantConn then
-        self:unbind(self.instantConn)
-        self.instantConn = nil
-    end
+    
+    return connection
 end
 
 -- ============================================
--- STEP 6: ANTI-RAGDOLL
+-- STEP 5: INIT EGG
 -- ============================================
-utility.antiRagdollEnabled = false
-utility.antiRagdollConn = nil
-utility.ragdollConns = {}
-
-function utility:startAntiRagdoll()
+function utility:initEgg()
     self.LocalPlayer = self.Players.LocalPlayer
-    if not self.LocalPlayer then return false, "No LocalPlayer" end
-    if not getconnections then return false, "Missing getconnections" end
-
-    self.Packages = self.ReplicatedStorage:FindFirstChild("Packages")
-    if not self.Packages then return false, "No Packages" end
-
-    self.Networking = self.Packages:FindFirstChild("Networking")
-    if not self.Networking then return false, "No Networking" end
-
-    self.RigSync = self.Networking:FindFirstChild("RE/RigSync/Refresh")
-    if not self.RigSync then return false, "No RE/RigSync/Refresh" end
-
-    local conns = getconnections(self.RigSync.OnClientEvent)
-    if conns then
-        for _, conn in next, conns do
-            pcall(function()
-                conn:Disconnect()
-                table.insert(utility.ragdollConns, conn)
-            end)
-        end
+    if not fireproximityprompt then
+        return false, "Missing fireproximityprompt"
     end
 
-    utility.antiRagdollConn = self.RunService.Heartbeat:Connect(function()
-        if not utility.antiRagdollEnabled then return end
+    self.Client = self.ReplicatedStorage:FindFirstChild("Client")
+    if not self.Client then return false, "No Client" end
 
-        local char = self.LocalPlayer.Character
-        if not char then return end
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if not hum then return end
+    local eggStateModule = self.Client:FindFirstChild("EggState")
+    if not eggStateModule then return false, "No EggState" end
 
-        for _, obj in next, char:GetDescendants() do
-            if obj:IsA("RagdollConstraint") or obj:IsA("BallSocketConstraint") then
-                pcall(function() obj:Destroy() end)
-            end
-        end
-
-        if hum:GetState() == Enum.HumanoidStateType.Physics or
-           hum:GetState() == Enum.HumanoidStateType.Ragdoll then
-            pcall(function()
-                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-            end)
-        end
-
-        for _, joint in next, char:GetDescendants() do
-            if joint:IsA("Motor6D") and joint.Enabled == false then
-                pcall(function() joint.Enabled = true end)
-            end
-        end
-    end)
+    self.EggState = require(eggStateModule)
+    if not self.EggState then return false, "EggState require failed" end
 
     return true
 end
 
-function utility:stopAntiRagdoll()
-    if utility.antiRagdollConn then
-        utility.antiRagdollConn:Disconnect()
-        utility.antiRagdollConn = nil
-    end
-    utility.ragdollConns = {}
-end
-
 -- ============================================
--- STEP 7: ANTI-TRAP (FIXED — PlayerTrap destroy)
+-- STEP 6: AUTO EGG (Chicken → Best Egg → STAY)
 -- ============================================
-utility.antiTrapEnabled = false
-utility.antiTrapConn = nil
-utility.trapConns = {}
-
-function utility:destroyTraps()
-    -- Hanapin yung __DEBRIS folder
-    local debris = self.Workspace:FindFirstChild("__DEBRIS")
-    if not debris then return end
-
-    -- Hanapin lahat ng PlayerTrap
-    for _, obj in next, debris:GetChildren() do
-        if obj.Name == "PlayerTrap" then
-            pcall(function() obj:Destroy() end)
-            print("[AntiTrap] ✅ Destroyed PlayerTrap")
-        end
-    end
-end
-
-function utility:startAntiTrap()
-    self.LocalPlayer = self.Players.LocalPlayer
-    if not self.LocalPlayer then return false, "No LocalPlayer" end
-
-    -- 1. Initial destroy ng existing traps
-    self:destroyTraps()
-
-    -- 2. Watch __DEBRIS folder — destroy agad pag may bagong trap
-    local debris = self.Workspace:FindFirstChild("__DEBRIS")
-    if debris then
-        table.insert(utility.trapConns, debris.ChildAdded:Connect(function(child)
-            if utility.antiTrapEnabled and child.Name == "PlayerTrap" then
-                pcall(function() child:Destroy() end)
-                print("[AntiTrap] ✅ Destroyed new PlayerTrap")
-            end
-        end))
-    end
-
-    -- 3. Watch Workspace — kung mag-appear yung __DEBRIS folder
-    table.insert(utility.trapConns, self.Workspace.ChildAdded:Connect(function(child)
-        if utility.antiTrapEnabled and child.Name == "__DEBRIS" then
-            child.ChildAdded:Connect(function(trap)
-                if utility.antiTrapEnabled and trap.Name == "PlayerTrap" then
-                    pcall(function() trap:Destroy() end)
+function utility:startEgg()
+    if self.eggConn then pcall(function() task.cancel(self.eggConn) end) end
+    self.eggConn = task.spawn(function()
+        while self.eggEnabled do
+            pcall(function()
+                local myChar = self.LocalPlayer.Character
+                local myPos = myChar and myChar.HumanoidRootPart.Position
+                if not myPos then task.wait(0.3) return end
+                
+                -- 1. TP sa chicken egg
+                local chickenEgg = self:getChickenEgg()
+                if not chickenEgg then
+                    task.wait(0.5)
+                    return
+                end
+                
+                ui.Status.Text = "Status: 🐔 TP to chicken..."
+                ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+                
+                self:TeleportTo(chickenEgg.BoundsCFrame.Position)
+                task.wait(0.3)
+                
+                -- 2. Grab chicken egg
+                ui.Status.Text = "Status: 🥚 Grabbing chicken..."
+                local p = self:getproximitypromptforegg(chickenEgg)
+                if p then
+                    pcall(function() fireproximityprompt(p, 0, true) end)
+                end
+                task.wait(0.2)
+                
+                -- 3. Hintayin ma-tuka
+                ui.Status.Text = "Status: 🐔 Waiting for peck..."
+                ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+                
+                local pecked = false
+                local conn = self:startVelocityWatcher(function()
+                    pecked = true
+                end)
+                
+                local waitTime = 0
+                while waitTime < 5 and not pecked do
+                    task.wait(0.1)
+                    waitTime = waitTime + 0.1
+                end
+                
+                if conn then conn:Disconnect() end
+                
+                -- 4. Pag na-tuka → TP sa best egg → STAY
+                if pecked then
+                    ui.Status.Text = "Status: 🎯 TP to best egg..."
+                    ui.Status.TextColor3 = Color3.fromRGB(0, 180, 90)
+                    
+                    local bestEgg = self:getBestEgg()
+                    if bestEgg then
+                        self:TeleportTo(bestEgg.BoundsCFrame.Position)
+                        task.wait(0.3)
+                        
+                        -- Grab best egg
+                        local bp = self:getproximitypromptforegg(bestEgg)
+                        if bp then
+                            pcall(function() fireproximityprompt(bp, 0, true) end)
+                        end
+                        task.wait(0.2)
+                        
+                        -- ✅ STAY LANG DITO — WALANG RETURN BASE
+                        ui.Status.Text = "Status: 🏠 Stay at best egg"
+                        ui.Status.TextColor3 = Color3.fromRGB(0, 180, 90)
+                        
+                        -- Reset — next cycle babalik sa chicken
+                        task.wait(1)
+                    end
                 end
             end)
-        end
-    end))
-
-    -- 4. Continuous loop — re-destroy kung may naka-plant na trap
-    utility.antiTrapConn = self.RunService.Heartbeat:Connect(function()
-        if not utility.antiTrapEnabled then return end
-        self:destroyTraps()
-
-        -- 5. Anti-ragdoll / anti-getup
-        local char = self.LocalPlayer.Character
-        if not char then return end
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if not hum then return end
-
-        -- Check kung naka-trap (IsTrapped attribute)
-        if char:GetAttribute("IsTrapped") == true then
-            -- Force getup
-            pcall(function()
-                hum.PlatformStand = false
-                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-            end)
-        end
-
-        if hum.PlatformStand then
-            pcall(function() hum.PlatformStand = false end)
-        end
-
-        local state = hum:GetState()
-        if state == Enum.HumanoidStateType.Physics or
-           state == Enum.HumanoidStateType.Ragdoll or
-           state == Enum.HumanoidStateType.FallingDown or
-           state == Enum.HumanoidStateType.PlatformStanding then
-            pcall(function()
-                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-            end)
-        end
-
-        for _, joint in next, char:GetDescendants() do
-            if joint:IsA("Motor6D") and joint.Enabled == false then
-                pcall(function() joint.Enabled = true end)
-            end
+            task.wait(0.3)
         end
     end)
-
-    return true
 end
 
-function utility:stopAntiTrap()
-    if utility.antiTrapConn then
-        utility.antiTrapConn:Disconnect()
-        utility.antiTrapConn = nil
+function utility:stopEgg()
+    self.eggEnabled = false
+    if self.eggConn then
+        pcall(function() task.cancel(self.eggConn) end)
+        self.eggConn = nil
     end
-    for _, conn in next, utility.trapConns do
-        pcall(function() conn:Disconnect() end)
-    end
-    utility.trapConns = {}
 end
 
 -- ============================================
--- STEP 8: UI
+-- STEP 7: UI
 -- ============================================
 local COLORS = {
     BG = Color3.fromRGB(25, 25, 30),
@@ -275,8 +315,8 @@ local function createUI()
     ScreenGui.Parent = utility.CoreGui
 
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 260, 0, 265)
-    Main.Position = UDim2.new(0.5, -130, 0.5, -132)
+    Main.Size = UDim2.new(0, 280, 0, 180)
+    Main.Position = UDim2.new(0.5, -140, 0.5, -90)
     Main.BackgroundColor3 = COLORS.BG
     Main.BorderSizePixel = 0
     Main.Active = true
@@ -368,13 +408,11 @@ local function createUI()
     end
 
     local speedToggle = makeToggle(50, "Speed Bypass", "⚡")
-    local pickupToggle = makeToggle(95, "Instant Pickup", "⚡")
-    local ragdollToggle = makeToggle(140, "Anti-Ragdoll", "🛡️")
-    local antiTrapToggle = makeToggle(185, "Anti-Trap", "🪤")
+    local eggToggle = makeToggle(95, "Auto Steal (Lennon)", "🥚")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
-    Status.Position = UDim2.new(0, 15, 0, 230)
+    Status.Position = UDim2.new(0, 15, 0, 145)
     Status.BackgroundTransparency = 1
     Status.Text = "Status: Ready"
     Status.TextColor3 = Color3.fromRGB(255, 200, 0)
@@ -384,14 +422,13 @@ local function createUI()
 
     return {
         ScreenGui = ScreenGui, Main = Main,
-        speedToggle = speedToggle, pickupToggle = pickupToggle,
-        ragdollToggle = ragdollToggle, antiTrapToggle = antiTrapToggle,
+        speedToggle = speedToggle, eggToggle = eggToggle,
         Status = Status, CloseBtn = CloseBtn
     }
 end
 
 -- ============================================
--- STEP 9: WIRING
+-- STEP 8: STATE + WIRING
 -- ============================================
 local ui = createUI()
 
@@ -402,7 +439,6 @@ local function setToggle(t, on)
     t.state.TextColor3 = on and COLORS.GREEN or COLORS.RED
 end
 
--- ⚡ Speed
 utility.speedEnabled = false
 utility.speedConn = nil
 
@@ -423,7 +459,10 @@ ui.speedToggle.btn.MouseButton1Click:Connect(function()
         ui.Status.Text = "Status: ⚡ Speed ON (" .. getgenv().config.speedValue .. ")"
         ui.Status.TextColor3 = COLORS.GREEN
     else
-        if utility.speedConn then utility.speedConn:Disconnect() utility.speedConn = nil end
+        if utility.speedConn then
+            utility.speedConn:Disconnect()
+            utility.speedConn = nil
+        end
         local char = utility.Players.LocalPlayer.Character
         if char then
             local hum = char:FindFirstChild("Humanoid")
@@ -434,93 +473,49 @@ ui.speedToggle.btn.MouseButton1Click:Connect(function()
     end
 end)
 
--- ⚡ Instant Pickup
-utility.pickupEnabled = false
+utility.eggEnabled = false
+utility.eggConn = nil
 
-ui.pickupToggle.btn.MouseButton1Click:Connect(function()
-    utility.pickupEnabled = not utility.pickupEnabled
-    setToggle(ui.pickupToggle, utility.pickupEnabled)
-    
-    if utility.pickupEnabled then
-        local ok = utility:startInstantPickup()
-        if ok then
-            ui.Status.Text = "Status: ⚡ Instant Pickup ON"
-            ui.Status.TextColor3 = COLORS.GREEN
-        else
-            ui.Status.Text = "Status: ❌ Instant Pickup failed"
-            ui.Status.TextColor3 = COLORS.RED
-            utility.pickupEnabled = false
-            setToggle(ui.pickupToggle, false)
-        end
+ui.eggToggle.btn.MouseButton1Click:Connect(function()
+    if not utility.eggReady then
+        ui.Status.Text = "Status: ❌ Auto Egg not ready"
+        ui.Status.TextColor3 = COLORS.RED
+        return
+    end
+    utility.eggEnabled = not utility.eggEnabled
+    setToggle(ui.eggToggle, utility.eggEnabled)
+    if utility.eggEnabled then
+        utility:startEgg()
+        ui.Status.Text = "Status: 🥚 Auto Steal ON"
+        ui.Status.TextColor3 = COLORS.GREEN
     else
-        utility:stopInstantPickup()
-        ui.Status.Text = "Status: ⚡ Instant Pickup OFF"
+        utility:stopEgg()
+        ui.Status.Text = "Status: 🥚 Auto Steal OFF"
         ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
     end
 end)
 
--- 🛡️ Anti-Ragdoll
-utility.antiRagdollEnabled = false
-
-ui.ragdollToggle.btn.MouseButton1Click:Connect(function()
-    utility.antiRagdollEnabled = not utility.antiRagdollEnabled
-    setToggle(ui.ragdollToggle, utility.antiRagdollEnabled)
-    
-    if utility.antiRagdollEnabled then
-        local ok, err = utility:startAntiRagdoll()
-        if ok then
-            ui.Status.Text = "Status: 🛡️ Anti-Ragdoll ON"
-            ui.Status.TextColor3 = COLORS.GREEN
-        else
-            ui.Status.Text = "Status: ❌ Anti-Ragdoll failed"
-            ui.Status.TextColor3 = COLORS.RED
-            utility.antiRagdollEnabled = false
-            setToggle(ui.ragdollToggle, false)
-        end
-    else
-        utility:stopAntiRagdoll()
-        ui.Status.Text = "Status: 🛡️ Anti-Ragdoll OFF"
-        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-    end
-end)
-
--- 🪤 Anti-Trap (FIXED — PlayerTrap destroy)
-utility.antiTrapEnabled = false
-
-ui.antiTrapToggle.btn.MouseButton1Click:Connect(function()
-    utility.antiTrapEnabled = not utility.antiTrapEnabled
-    setToggle(ui.antiTrapToggle, utility.antiTrapEnabled)
-    
-    if utility.antiTrapEnabled then
-        local ok = utility:startAntiTrap()
-        if ok then
-            ui.Status.Text = "Status: 🪤 Anti-Trap ON"
-            ui.Status.TextColor3 = COLORS.GREEN
-        else
-            ui.Status.Text = "Status: ❌ Anti-Trap failed"
-            ui.Status.TextColor3 = COLORS.RED
-            utility.antiTrapEnabled = false
-            setToggle(ui.antiTrapToggle, false)
-        end
-    else
-        utility:stopAntiTrap()
-        ui.Status.Text = "Status: 🪤 Anti-Trap OFF"
-        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-    end
-end)
-
--- Close
 ui.CloseBtn.MouseButton1Click:Connect(function()
     utility.speedEnabled = false
-    utility.pickupEnabled = false
-    utility.antiRagdollEnabled = false
-    utility.antiTrapEnabled = false
+    utility.eggEnabled = false
     if utility.speedConn then utility.speedConn:Disconnect() end
-    utility:stopInstantPickup()
-    utility:stopAntiRagdoll()
-    utility:stopAntiTrap()
+    utility:stopEgg()
     ui.ScreenGui:Destroy()
 end)
 
-ui.Status.Text = "Status: ✅ Ready"
-ui.Status.TextColor3 = COLORS.GREEN
+-- ============================================
+-- STEP 9: INIT
+-- ============================================
+task.spawn(function()
+    local eggOK, eggErr = utility:initEgg()
+    utility.eggReady = eggOK
+
+    if eggOK then
+        ui.Status.Text = "Status: ✅ Ready"
+        ui.Status.TextColor3 = COLORS.GREEN
+    else
+        ui.Status.Text = "Status: ❌ Egg init failed"
+        ui.Status.TextColor3 = COLORS.RED
+        warn("Egg: " .. tostring(eggErr))
+    end
+end)
