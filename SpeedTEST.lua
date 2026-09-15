@@ -26,17 +26,16 @@ utility.areas = {
 }
 
 getgenv().config = {
-    speedValue = 250,           -- ⚡ 250 para mabilis ma-tuka
-    basePos = Vector3.new(514, 71, -368),
-    chickenAreas = 3,           -- Areas 1-3 = chicken
-    minArea = 9,                -- Best egg = area 9+
-    knockbackThreshold = 25,    -- Sensitivity ng tuka detection
+    speedValue = 250,
+    baitArea = "Lake",          -- 🏞️ Bagong bait area
+    minArea = 9,
+    knockbackThreshold = 25,
 }
 
 -- ============================================
 -- STEP 4: EGG LOGIC
 -- ============================================
-function utility:getChickenEgg()
+function utility:getBaitEgg()
     local s, r = pcall(function(...)
         local egg = nil
         local closestDist = math.huge
@@ -44,8 +43,7 @@ function utility:getChickenEgg()
         if not myPos then return nil end
         
         for key, data in next, self.EggState.ReadFieldEggs().Records do
-            local idx = table.find(self.areas, data.AreaId)
-            if idx and idx <= getgenv().config.chickenAreas then
+            if data.AreaId == getgenv().config.baitArea then
                 local dist = (data.BoundsCFrame.Position - myPos).Magnitude
                 if dist < closestDist then
                     closestDist = dist
@@ -132,22 +130,7 @@ function utility:getproximitypromptforegg(egg)
     return nil
 end
 
-function utility:hasEgg()
-    local s, r = pcall(function(...)
-        local char = self.LocalPlayer.Character
-        if not char then return false end
-        for _, obj in next, char:GetChildren() do
-            if obj.Name:lower():find("egg") then
-                return true
-            end
-        end
-        return false
-    end)
-    if s and r then return r end
-    return false
-end
-
--- ⚡ VELOCITY-BASED PECK DETECTION
+-- ⚡ VELOCITY-BASED HIT DETECTION
 function utility:startVelocityWatcher(callback)
     local char = self.LocalPlayer.Character
     if not char then return end
@@ -204,7 +187,7 @@ function utility:initEgg()
 end
 
 -- ============================================
--- STEP 6: LENNON STYLE AUTO EGG
+-- STEP 6: AUTO EGG (Lake → Best Egg → Stay)
 -- ============================================
 function utility:startEgg()
     if self.eggConn then pcall(function() task.cancel(self.eggConn) end) end
@@ -215,57 +198,102 @@ function utility:startEgg()
                 local myPos = myChar and myChar.HumanoidRootPart.Position
                 if not myPos then task.wait(0.3) return end
                 
-                local hasEgg = self:hasEgg()
-                
-                -- STEP 1: May dala? → base
-                if hasEgg then
-                    self:TeleportTo(getgenv().config.basePos)
+                -- 1. TP sa Lake egg
+                local baitEgg = self:getBaitEgg()
+                if not baitEgg then
+                    ui.Status.Text = "Status: ⚠️ No Lake egg — wait..."
+                    ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
                     task.wait(0.5)
-                else
-                    -- STEP 2: Wala pa → chicken egg muna
-                    local chickenEgg = self:getChickenEgg()
-                    if chickenEgg then
-                        self:TeleportTo(chickenEgg.BoundsCFrame.Position)
-                        task.wait(0.3)
-                        
-                        local p = self:getproximitypromptforegg(chickenEgg)
-                        if p then
-                            pcall(function() fireproximityprompt(p, 0, true) end)
-                        end
-                        
-                        -- STEP 3: Hintayin TUKA (velocity trigger)
-                        local pecked = false
-                        local conn = self:startVelocityWatcher(function()
-                            pecked = true
-                        end)
-                        
-                        local waitTime = 0
-                        while waitTime < 5 and not pecked do
-                            task.wait(0.1)
-                            waitTime = waitTime + 0.1
-                        end
-                        
-                        if conn then conn:Disconnect() end
-                        
-                        -- STEP 4: Pag na-tuka → best egg → kunin → base
-                        if pecked then
-                            local bestEgg = self:getBestEgg()
-                            if bestEgg then
-                                self:TeleportTo(bestEgg.BoundsCFrame.Position)
-                                task.wait(0.3)
-                                
-                                local bp = self:getproximitypromptforegg(bestEgg)
-                                if bp then
-                                    pcall(function() fireproximityprompt(bp, 0, true) end)
+                    return
+                end
+                
+                ui.Status.Text = "Status: 🏞️ TP to Lake..."
+                ui.Status.TextColor3 = Color3.fromRGB(0, 180, 90)
+                
+                self:TeleportTo(baitEgg.BoundsCFrame.Position)
+                task.wait(0.3)
+                
+                -- 2. Grab Lake egg
+                ui.Status.Text = "Status: 🥚 Grabbing Lake egg..."
+                local p = self:getproximitypromptforegg(baitEgg)
+                if p then
+                    pcall(function() fireproximityprompt(p, 0, true) end)
+                end
+                task.wait(0.2)
+                
+                -- 3. Hintayin ma-hit
+                ui.Status.Text = "Status: ⚡ Waiting for hit..."
+                ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+                
+                -- Force touch sa Lake guard
+                pcall(function()
+                    local guardAreas = self.Workspace:FindFirstChild("__OBJECTS", true)
+                        and self.Workspace.__OBJECTS:FindFirstChild("Areas")
+                        and self.Workspace.__OBJECTS.Areas:FindFirstChild("GuardAreas")
+                    if guardAreas then
+                        local lake = guardAreas:FindFirstChild("Lake")
+                        if lake then
+                            local guard = lake:FindFirstChild("Guard")
+                            if guard then
+                                local collider = guard:FindFirstChild("Collider")
+                                    or guard:FindFirstChild("HumanoidRootPart")
+                                    or guard.PrimaryPart
+                                if collider and firetouchinterest then
+                                    local hrp = self.LocalPlayer.Character and self.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                                    if hrp then
+                                        firetouchinterest(hrp, collider, 0)
+                                        task.wait(0.05)
+                                        firetouchinterest(hrp, collider, 1)
+                                        print("[Farm] ✅ Force touch sa Lake guard")
+                                    end
                                 end
-                                task.wait(0.3)
-                                
-                                -- Dalhin sa base
-                                self:TeleportTo(getgenv().config.basePos)
-                                task.wait(0.5)
                             end
                         end
                     end
+                end)
+                
+                local hit = false
+                local conn = self:startVelocityWatcher(function()
+                    hit = true
+                end)
+                
+                local waitTime = 0
+                while waitTime < 8 and not hit do
+                    task.wait(0.1)
+                    waitTime = waitTime + 0.1
+                end
+                
+                if conn then conn:Disconnect() end
+                
+                -- 4. Pag na-hit → TP sa best egg → STAY
+                if hit then
+                    ui.Status.Text = "Status: 🎯 TP to best egg..."
+                    ui.Status.TextColor3 = Color3.fromRGB(0, 180, 90)
+                    
+                    local bestEgg = self:getBestEgg()
+                    if bestEgg then
+                        self:TeleportTo(bestEgg.BoundsCFrame.Position)
+                        task.wait(0.3)
+                        
+                        -- Grab best egg
+                        local bp = self:getproximitypromptforegg(bestEgg)
+                        if bp then
+                            pcall(function() fireproximityprompt(bp, 0, true) end)
+                        end
+                        task.wait(0.2)
+                        
+                        -- ✅ STAY LANG DITO
+                        ui.Status.Text = "Status: 🏠 Stay at best egg"
+                        ui.Status.TextColor3 = Color3.fromRGB(0, 180, 90)
+                        
+                        task.wait(1)
+                    else
+                        ui.Status.Text = "Status: ⚠️ No best egg"
+                        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+                    end
+                else
+                    ui.Status.Text = "Status: ⚠️ No hit — retry"
+                    ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
                 end
             end)
             task.wait(0.3)
@@ -289,7 +317,6 @@ local COLORS = {
     TITLE_BG = Color3.fromRGB(35, 35, 42),
     STROKE = Color3.fromRGB(60, 60, 70),
     TEXT = Color3.fromRGB(255, 255, 255),
-    SUBTEXT = Color3.fromRGB(180, 180, 190),
     GREEN = Color3.fromRGB(0, 180, 90),
     RED = Color3.fromRGB(200, 50, 50),
     KNOB = Color3.fromRGB(255, 255, 255),
@@ -336,7 +363,7 @@ local function createUI()
     Title.Size = UDim2.new(1, -50, 1, 0)
     Title.Position = UDim2.new(0, 12, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "🥚 Steal An Egg"
+    Title.Text = "🥚 Lake → Best Egg"
     Title.TextColor3 = COLORS.TEXT
     Title.TextSize = 14
     Title.Font = Enum.Font.GothamBold
@@ -400,7 +427,7 @@ local function createUI()
     end
 
     local speedToggle = makeToggle(50, "Speed Bypass", "⚡")
-    local eggToggle = makeToggle(95, "Auto Steal (Lennon)", "🥚")
+    local eggToggle = makeToggle(95, "Auto Lake → Best", "🏞️")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
@@ -478,11 +505,11 @@ ui.eggToggle.btn.MouseButton1Click:Connect(function()
     setToggle(ui.eggToggle, utility.eggEnabled)
     if utility.eggEnabled then
         utility:startEgg()
-        ui.Status.Text = "Status: 🥚 Auto Steal ON"
+        ui.Status.Text = "Status: 🏞️ Auto Lake → Best ON"
         ui.Status.TextColor3 = COLORS.GREEN
     else
         utility:stopEgg()
-        ui.Status.Text = "Status: 🥚 Auto Steal OFF"
+        ui.Status.Text = "Status: 🏞️ Auto Lake → Best OFF"
         ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
     end
 end)
