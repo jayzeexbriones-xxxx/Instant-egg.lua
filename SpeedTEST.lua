@@ -24,7 +24,7 @@ local utility = {
 getgenv().config = {
     speedValue = 260,
     autoGrabRadius = 30,
-    positionFallbackRadius = 15,   -- Fallback kung hindi mahanap yung uid
+    positionFallbackRadius = 15,
 }
 
 -- ============================================
@@ -191,13 +191,11 @@ function utility:startAutoGrab()
         local currentUid = utility:getCurrentEggUid()
 
         if currentUid then
-            -- ✅ May egg — i-save yung uid at position
             utility.lastEggUid = currentUid
             utility.lastEggPos = hrp.Position
             return
         end
 
-        -- ❌ Wala nang egg — baka na-drop!
         if not utility.lastEggUid then return end
 
         -- 🔍 Hanapin yung DROPPED egg
@@ -216,7 +214,6 @@ function utility:startAutoGrab()
                 end
 
                 if prompt then
-                    -- 🎯 Try UID matching
                     local eggUid = obj:GetAttribute("UID") 
                         or obj:GetAttribute("Uid")
                         or (obj.Parent and (obj.Parent:GetAttribute("UID") or obj.Parent:GetAttribute("Uid")))
@@ -226,7 +223,6 @@ function utility:startAutoGrab()
                         matchUid = tostring(eggUid) == tostring(utility.lastEggUid)
                     end
 
-                    -- 🎯 Fallback: position-based matching
                     local matchPos = false
                     if utility.lastEggPos then
                         local distFromDrop = (obj.Position - utility.lastEggPos).Magnitude
@@ -244,7 +240,6 @@ function utility:startAutoGrab()
             end
         end
 
-        -- ⚡ Auto-grab yung dropped egg mo lang
         if closestPrompt then
             pcall(function()
                 closestPrompt.HoldDuration = 0
@@ -506,7 +501,7 @@ ui.ragdollToggle.btn.MouseButton1Click:Connect(function()
     end
 end)
 
--- 🥚 Auto-Grab MY Dropped Egg
+-- 🥚 Auto-Grab My Dropped Egg
 utility.autoGrabEnabled = false
 
 ui.autoGrabToggle.btn.MouseButton1Click:Connect(function()
