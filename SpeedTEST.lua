@@ -1,581 +1,316 @@
--- ============================================================
--- STEAL AN EGG — Speed 700 + Auto Farm Best Egg (450)
--- + TP Chicken → Grab → Best Egg
--- ============================================================
+-- ============================================
+-- TP CHICKEN EGG -> STEAL -> HATCH -> TP BEST EGG -> STAY
+-- With UI (Rayfield) ON/OFF toggle
+-- Executor: Delta (latest)
+-- ============================================
 
-local Players           = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService        = game:GetService("RunService")
-local TweenService      = game:GetService("TweenService")
-local Workspace         = game:GetService("Workspace")
-local CoreGui           = game:GetService("CoreGui")
-local LocalPlayer       = Players.LocalPlayer
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
 
--- ============================================================
--- STATE
--- ============================================================
-local State = {
-    speedEnabled = false,
-    farmEnabled  = false,
-    speedValue   = 700,
-    minArea      = 9,
-    tweenSpeed   = 450,
-    chickenAreas = 3,          -- 🐔 Chicken area (1-3)
+-- ============ LOAD RAYFIELD UI ============
+local Rayfield
+do
+    local ok, res = pcall(function()
+        return game:HttpGet("https://sirius.menu/rayfield")
+    end)
+    if ok and type(res) == "string" and #res > 1000 then
+        local okLoad, lib = pcall(function() return loadstring(res)() end)
+        if okLoad and type(lib) == "table" then
+            Rayfield = lib
+        end
+    end
+    if not Rayfield then
+        warn("[AUTO] Failed to load Rayfield UI")
+        return
+    end
+end
+
+-- ============ CONFIG ============
+getgenv().config = {
+    chickenArea = "Forest",
+    minarea = 9,
+    tpSpeed = 350,
+    arriveDist = 5,
+    hatchWait = 3,
 }
 
-local START_POS = Vector3.new(519.155, 70.576, -356.103)
+local utility = {
+    Workspace = Workspace,
+    Players = Players,
+    ReplicatedStorage = RS,
+    running = false,
+}
 
-local AREA_NAMES = {
+utility.areas = {
     "Forest", "Lake", "Desert", "Jungle", "Snow",
     "Volcano", "Abyss Ocean", "Prehistoric", "Cosmic",
     "Cherry Blossom", "Titan Temple",
 }
 
--- ============================================================
--- SPEED BYPASS
--- ============================================================
-local _speedConn = nil
-local _speedActive = false
+-- ============ INIT ============
+function utility:init()
+    self.LocalPlayer = self.Players.LocalPlayer
 
-local function _activeHum()
-    local c = LocalPlayer.Character
-    if not c then return nil end
-    return c:FindFirstChildOfClass("Humanoid")
-end
+    if not fireproximityprompt then
+        return self.LocalPlayer:Kick("Executor missing fireproximityprompt")
+    end
 
-local function initSpeedBypass()
-    if type(getgc) ~= "function" or type(hookfunction) ~= "function" or type(islclosure) ~= "function" then
-        warn("[Speed] missing functions"); return false
-    end
-    local function findFn(nups, line)
-        local ok, r = pcall(function()
-            for _, f in next, getgc() do
-                if typeof(f) == "function" and islclosure(f) then
-                    local upvs = debug.getupvalues(f)
-                    if upvs and #upvs == nups and debug.info(f, "l") == line then
-                        return f
-                    end
-                end
-            end
-        end)
-        return ok and r or nil
-    end
-    
-    local func3 = findFn(19, 3)
-    if not func3 then warn("[Speed] func3 not found"); return false end
-    
-    local v7 = debug.getupvalue(func3, 2)
-    if not v7 then warn("[Speed] v7 not found"); return false end
-    
-    local ok, err = pcall(function()
-        local orig
-        if type(newlclosure) == "function" then
-            orig = hookfunction(v7, newlclosure(function(p1, p2)
-                if p2 and typeof(p2) == "table" then setmetatable(p2, {}) end
-                return orig(p1, p2)
-            end))
-        else
-            orig = hookfunction(v7, function(p1, p2)
-                if p2 and typeof(p2) == "table" then setmetatable(p2, {}) end
-                return orig(p1, p2)
-            end)
-        end
+    self.Client = self.ReplicatedStorage:FindFirstChild("Client")
+    if not self.Client then return warn("No Client") end
+
+    self.EggState = require(self.Client:FindFirstChild("EggState"))
+    if not self.EggState then return warn("No EggState") end
+
+    local ok, AreaEggSlotIdentity = pcall(function()
+        return require(self.ReplicatedStorage.Shared.Util.AreaEggSlotIdentity)
     end)
-    if not ok then warn("[Speed] hook failed:", tostring(err)); return false end
-    
-    print("[Speed] OK - bypass active")
-    _speedActive = true
+    self.AreaEggSlotIdentity = ok and AreaEggSlotIdentity or nil
+
     return true
 end
 
-local function startSpeed(spd)
-    if _speedConn then _speedConn:Disconnect(); _speedConn = nil end
-    if not _speedActive then return end
-    _speedConn = RunService.Heartbeat:Connect(function()
-        local h = _activeHum()
-        if h then h.WalkSpeed = spd end
-    end)
-end
-
-local function stopSpeed()
-    if _speedConn then _speedConn:Disconnect(); _speedConn = nil end
-    local h = _activeHum()
-    if h then h.WalkSpeed = 16 end
-end
-
-local speedReady = pcall(initSpeedBypass)
-
--- ============================================================
--- EGG STATE
--- ============================================================
-local EggState = nil
-local AreaEggSlotIdentity = nil
-
-local function loadModules()
-    if EggState then return true end
-    local ok = pcall(function()
-        local client = ReplicatedStorage:FindFirstChild("Client")
-        if client then
-            local es = client:FindFirstChild("EggState")
-            if es then EggState = require(es) end
-        end
-        local shared = ReplicatedStorage:FindFirstChild("Shared")
-        if shared then
-            local util = shared:FindFirstChild("Util")
-            if util then
-                local aes = util:FindFirstChild("AreaEggSlotIdentity")
-                if aes then AreaEggSlotIdentity = require(aes) end
+-- ============ GET CHICKEN EGG ============
+function utility:getChickenEgg()
+    local s, r = pcall(function()
+        for _, data in next, self.EggState.ReadFieldEggs().Records do
+            if data.AreaId == getgenv().config.chickenArea then
+                if data.State == "Slot" or data.State == "Dropped" then
+                    return data
+                end
             end
         end
+        return nil
     end)
-    return ok and EggState ~= nil
+    if s and r then return r end
+    return nil
 end
 
--- ============================================================
--- HELPERS
--- ============================================================
-local function getHRP()
-    local c = LocalPlayer.Character
-    return c and c:FindFirstChild("HumanoidRootPart")
+-- ============ GET BEST EGG ============
+function utility:getBestEgg()
+    local s, r = pcall(function()
+        local egg = nil
+        local biggest = 0
+        for _, data in next, self.EggState.ReadFieldEggs().Records do
+            local idx = table.find(self.areas, data.AreaId)
+            if idx and idx > getgenv().config.minarea then
+                if data.State == "Slot" or data.State == "Dropped" then
+                    if data.AssetScale > biggest then
+                        biggest = data.AssetScale
+                        egg = data
+                    end
+                end
+            end
+        end
+        return egg
+    end)
+    if s and r then return r end
+    return nil
 end
 
-local function getHum()
-    local c = LocalPlayer.Character
-    return c and c:FindFirstChildOfClass("Humanoid")
-end
-
-local function getRarityNumber(rec)
-    if rec and rec.Rarity and type(rec.Rarity) == "table" then
-        return rec.Rarity.RarityNumber or 0
-    end
-    return 0
-end
-
-local function getAssetScale(rec)
-    return tonumber(rec.AssetScale) or 1
-end
-
--- ============================================================
--- 🚀 TP (instant)
--- ============================================================
-local function tpTo(pos)
-    local char = LocalPlayer.Character
-    if not char then return false end
+-- ============ TP / GOTO ============
+function utility:GoTo(pos)
     pcall(function()
-        char:PivotTo(CFrame.new(pos + Vector3.new(0, 3, 0)))
+        local dist = math.huge
+        repeat
+            if not self.running then return end
+            local dt = task.wait(0.01)
+            local hrp = self.LocalPlayer.Character
+                and self.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if not hrp then break end
+            local start = hrp.Position
+            dist = (pos - start).Magnitude
+            local half = start + (pos - start).Unit * dt * getgenv().config.tpSpeed
+            self.LocalPlayer.Character:MoveTo(half)
+        until dist <= getgenv().config.arriveDist
     end)
-    local h = getHRP()
-    if h then
-        h.AssemblyLinearVelocity = Vector3.zero
-        h.AssemblyAngularVelocity = Vector3.zero
-    end
-    return true
 end
 
--- ============================================================
--- 🐔 FIND CHICKEN EGG (area 1-3)
--- ============================================================
-local function findChickenEgg()
-    if not EggState then return nil, nil end
-    local ok, fieldEggs = pcall(function() return EggState.ReadFieldEggs() end)
-    if not ok or not fieldEggs or not fieldEggs.Records then return nil, nil end
-
-    local bestRec, bestModel = nil, nil
-    local bestDist = math.huge
-    local r = getHRP()
-    if not r then return nil, nil end
-
-    for _, rec in ipairs(fieldEggs.Records) do
-        if rec.State == "Slot" or rec.State == "Dropped" then
-            local areaIdx = nil
-            for i, name in ipairs(AREA_NAMES) do
-                if rec.AreaId == name then areaIdx = i; break end
-            end
-            
-            if areaIdx and areaIdx <= State.chickenAreas then
-                local model = Workspace:FindFirstChild("AreaEggSlotsClient", true)
-                    and Workspace.AreaEggSlotsClient:FindFirstChild(rec.Uid)
-                    or Workspace:FindFirstChild(rec.Uid, true)
-                if model then
-                    local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
-                    if part then
-                        local d = (part.Position - r.Position).Magnitude
-                        if d < bestDist then
-                            bestDist = d
-                            bestRec = rec
-                            bestModel = model
-                        end
-                    end
+-- ============ PROXIMITY PROMPT ============
+function utility:getPromptForEgg(egg)
+    local s, r = pcall(function()
+        local prompts = self.Workspace:QueryDescendants("#CarryAreaEgg")
+        local closest, closestDist = nil, math.huge
+        for _, prompt in next, prompts do
+            local p = prompt.Parent
+            if p and p:IsA("BasePart") then
+                local d = (egg.BoundsCFrame.Position - p.Position).Magnitude
+                if d < closestDist then
+                    closestDist = d
+                    closest = prompt
                 end
             end
         end
-    end
-    return bestRec, bestModel
-end
-
--- ============================================================
--- 🎯 FIND BEST EGG (rarity + scale, area 9+)
--- ============================================================
-local function findBestEgg()
-    if not EggState then return nil, nil end
-    local ok, fieldEggs = pcall(function() return EggState.ReadFieldEggs() end)
-    if not ok or not fieldEggs or not fieldEggs.Records then return nil, nil end
-
-    local bestRec, bestModel = nil, nil
-    local bestScore = -1
-
-    for _, rec in ipairs(fieldEggs.Records) do
-        if rec.State == "Slot" or rec.State == "Dropped" then
-            local areaIdx = nil
-            for i, name in ipairs(AREA_NAMES) do
-                if rec.AreaId == name then areaIdx = i; break end
-            end
-            
-            if areaIdx and areaIdx >= State.minArea then
-                local model = Workspace:FindFirstChild("AreaEggSlotsClient", true)
-                    and Workspace.AreaEggSlotsClient:FindFirstChild(rec.Uid)
-                    or Workspace:FindFirstChild(rec.Uid, true)
-                if model then
-                    local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
-                    if part then
-                        local rarityNum = getRarityNumber(rec)
-                        local scale = getAssetScale(rec)
-                        local score = (rarityNum * 1000) + scale
-                        
-                        if score > bestScore then
-                            bestScore = score
-                            bestRec = rec
-                            bestModel = model
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return bestRec, bestModel
-end
-
--- ============================================================
--- 🚀 FAST TWEEN MOVE
--- ============================================================
-local function fastTweenTo(targetPos, timeout)
-    local char = LocalPlayer.Character
-    local hrp = getHRP()
-    if not char or not hrp then return false end
-    
-    timeout = timeout or 8
-    if (hrp.Position - targetPos).Magnitude <= 5 then return true end
-    
-    local dist = (targetPos - hrp.Position).Magnitude
-    local tweenTime = math.max(dist / State.tweenSpeed, 0.05)
-    
-    local tween = TweenService:Create(
-        hrp,
-        TweenInfo.new(tweenTime, Enum.EasingStyle.Linear),
-        { CFrame = CFrame.new(targetPos) }
-    )
-    
-    local done = false
-    tween.Completed:Connect(function()
-        done = true
+        return closest
     end)
-    
-    tween:Play()
-    
-    local t0 = tick()
-    while not done and tick() - t0 < timeout do
-        if not State.farmEnabled then 
-            tween:Cancel()
-            break 
-        end
-        task.wait(0.01)
-    end
-    
-    return true
+    return s and r or nil
 end
 
--- ============================================================
--- 🚀 GRAB EGG (remote + prompt)
--- ============================================================
-local function grabEgg(rec, model)
-    pcall(function() EggState.CarryFieldEgg(rec.Uid) end)
-    task.wait(0.1)
-    
-    local prompt = model:FindFirstChild("CarryAreaEgg", true)
-        or model:FindFirstChildWhichIsA("ProximityPrompt", true)
-    if prompt and fireproximityprompt then
-        pcall(function()
-            prompt.HoldDuration = 0
-            fireproximityprompt(prompt, 0)
-        end)
-    end
-    task.wait(0.2)
-end
+-- ============ STEAL EGG ============
+function utility:stealEgg(egg, label)
+    if not egg then return false end
+    label = label or "egg"
 
--- ============================================================
--- 🚀 FARM CYCLE (with chicken step)
--- ============================================================
-local function farmCycle()
-    if not State.farmEnabled then return end
-    if not loadModules() then return end
+    warn(("[AUTO] TP sa %s..."):format(label))
+    local pos = egg.BoundsCFrame and egg.BoundsCFrame.Position
+    if not pos then return false end
 
-    -- ============ STEP 1: TP sa chicken egg ============
-    ui.Status.Text = "Status: 🐔 TP to chicken..."
-    ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-    
-    local chickenRec, chickenModel = findChickenEgg()
-    if chickenRec and chickenModel then
-        local chickenPart = chickenModel.PrimaryPart or chickenModel:FindFirstChildWhichIsA("BasePart", true)
-        if chickenPart then
-            tpTo(chickenPart.Position)
-            task.wait(0.3)
-            
-            -- Grab chicken egg
-            ui.Status.Text = "Status: 🥚 Grab chicken..."
-            grabEgg(chickenRec, chickenModel)
-            print("[Farm] ✅ Chicken egg grabbed")
-        end
-    else
-        print("[Farm] ⚠️ No chicken egg found — skipping")
+    self:GoTo(pos)
+    if not self.running then return false end
+    task.wait(0.3)
+
+    local slotKey = nil
+    if self.AreaEggSlotIdentity
+        and self.AreaEggSlotIdentity.LooksLikeFirstAreaUid
+        and self.AreaEggSlotIdentity.LooksLikeFirstAreaUid(egg.Uid) then
+        slotKey = self.AreaEggSlotIdentity.SlotKey(egg.AreaId, egg.NestId)
     end
 
-    if not State.farmEnabled then return end
+    local ok, res = pcall(function()
+        return self.EggState.CarryFieldEgg(egg.Uid, slotKey)
+    end)
+    if ok and res == true then
+        warn(("[AUTO] Na-steal %s (instant)"):format(label))
+        return true
+    end
 
-    -- ============ STEP 2: Tween sa best egg ============
-    ui.Status.Text = "Status: 🎯 Going to best egg..."
-    ui.Status.TextColor3 = Color3.fromRGB(0, 180, 90)
-    
-    local rec, model = findBestEgg()
-    if not rec or not model then
+    local prompt = self:getPromptForEgg(egg)
+    if prompt then
+        pcall(function() fireproximityprompt(prompt) end)
         task.wait(0.3)
+        warn(("[AUTO] Na-steal %s (prompt)"):format(label))
+        return true
+    end
+
+    warn(("[AUTO] Failed i-steal %s"):format(label))
+    return false
+end
+
+-- ============ WAIT FOR HATCH ============
+function utility:waitForHatch(uid)
+    local maxWait = getgenv().config.hatchWait
+    local t0 = os.clock()
+
+    warn("[AUTO] Hinihintay ma-tuka...")
+    repeat
+        if not self.running then return false end
+        task.wait(0.2)
+        local stillThere = false
+        pcall(function()
+            local rec = self.EggState.ReadFieldEgg and self.EggState.ReadFieldEgg(uid)
+            if rec and (rec.State == "Slot" or rec.State == "Dropped") then
+                stillThere = true
+            end
+        end)
+        if not stillThere then
+            warn("[AUTO] Na-tuka na!")
+            return true
+        end
+    until (os.clock() - t0) > maxWait
+
+    warn("[AUTO] Hatch timeout - tuloy pa rin sa best egg")
+    return false
+end
+
+-- ============ MAIN FLOW ============
+function utility:run()
+    if not self:init() then return end
+    self.running = true
+
+    warn("=== AUTO TP CHICKEN EGG START ===")
+
+    -- STEP 1: Chicken Egg
+    local chicken = self:getChickenEgg()
+    if not chicken then
+        warn("[AUTO] Walang chicken egg sa Forest!")
+        self.running = false
         return
     end
+    local chickenUid = chicken.Uid
+    self:stealEgg(chicken, "Chicken Egg")
 
-    local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
-    if not part then return end
+    if not self.running then return end
 
-    -- Fast tween to best egg
-    fastTweenTo(part.Position, 15)
-    if not State.farmEnabled then return end
+    -- STEP 2: Wait hatch
+    self:waitForHatch(chickenUid)
 
-    task.wait(0.1)
+    if not self.running then return end
 
-    -- ============ STEP 3: Grab best egg ============
-    ui.Status.Text = "Status: 🥚 Grabbing best egg..."
-    grabEgg(rec, model)
+    -- STEP 3: Best Egg
+    local best = self:getBestEgg()
+    if not best then
+        warn("[AUTO] Walang best egg na nahanap!")
+        self.running = false
+        return
+    end
+    self:stealEgg(best, "Best Egg")
 
-    -- ============ STEP 4: Return sa base ============
-    ui.Status.Text = "Status: 🏠 Returning to base..."
-    fastTweenTo(START_POS, 15)
-    task.wait(0.1)
-    
-    ui.Status.Text = "Status: ✅ Done — repeating..."
-    ui.Status.TextColor3 = COLORS.GREEN
+    -- STEP 4: STAY
+    warn("=== TAPOS — NASA BEST EGG AREA NA, STAY LANG DITO ===")
+    self.running = false
 end
 
--- ============================================================
--- UI
--- ============================================================
-local COLORS = {
-    BG = Color3.fromRGB(25, 25, 30),
-    TITLE_BG = Color3.fromRGB(35, 35, 42),
-    STROKE = Color3.fromRGB(60, 60, 70),
-    TEXT = Color3.fromRGB(255, 255, 255),
-    GREEN = Color3.fromRGB(0, 180, 90),
-    RED = Color3.fromRGB(200, 50, 50),
-    KNOB = Color3.fromRGB(255, 255, 255),
-    TRACK_OFF = Color3.fromRGB(70, 70, 80)
-}
+-- ============ UI ============
+local Window = Rayfield:CreateWindow({
+    name = "Auto TP Chicken Egg",
+    loadingTitle = "Loading...",
+    loadingSubtitle = "by Blyxo-style logic",
+    configurationSaving = {
+        Enabled = false,
+    },
+    discord = {
+        Enabled = false,
+    },
+    keySystem = false,
+})
 
-local function createUI()
-    if CoreGui:FindFirstChild("StealEggUI") then
-        CoreGui.StealEggUI:Destroy()
-    end
+local MainTab = Window:CreateTab("Main", 4483362458)
 
-    local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "StealEggUI"
-    ScreenGui.ResetOnSpawn = false
-    ScreenGui.Parent = CoreGui
+MainTab:CreateSection("Auto TP")
 
-    local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 260, 0, 180)
-    Main.Position = UDim2.new(0.5, -130, 0.5, -90)
-    Main.BackgroundColor3 = COLORS.BG
-    Main.BorderSizePixel = 0
-    Main.Active = true
-    Main.Draggable = true
-    Main.Parent = ScreenGui
-
-    Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
-    local s1 = Instance.new("UIStroke", Main)
-    s1.Color = COLORS.STROKE
-
-    local TitleBar = Instance.new("Frame", Main)
-    TitleBar.Size = UDim2.new(1, 0, 0, 35)
-    TitleBar.BackgroundColor3 = COLORS.TITLE_BG
-    TitleBar.BorderSizePixel = 0
-    Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
-
-    local TitleCover = Instance.new("Frame", TitleBar)
-    TitleCover.Size = UDim2.new(1, 0, 0, 10)
-    TitleCover.Position = UDim2.new(0, 0, 1, -10)
-    TitleCover.BackgroundColor3 = COLORS.TITLE_BG
-    TitleCover.BorderSizePixel = 0
-
-    local Title = Instance.new("TextLabel", TitleBar)
-    Title.Size = UDim2.new(1, -50, 1, 0)
-    Title.Position = UDim2.new(0, 12, 0, 0)
-    Title.BackgroundTransparency = 1
-    Title.Text = "🥚 Steal An Egg"
-    Title.TextColor3 = COLORS.TEXT
-    Title.TextSize = 13
-    Title.Font = Enum.Font.GothamBold
-    Title.TextXAlignment = Enum.TextXAlignment.Left
-
-    local CloseBtn = Instance.new("TextButton", TitleBar)
-    CloseBtn.Size = UDim2.new(0, 25, 0, 25)
-    CloseBtn.Position = UDim2.new(1, -32, 0, 5)
-    CloseBtn.BackgroundColor3 = COLORS.RED
-    CloseBtn.Text = "✕"
-    CloseBtn.TextColor3 = COLORS.TEXT
-    CloseBtn.TextSize = 14
-    CloseBtn.Font = Enum.Font.GothamBold
-    Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
-
-    local function makeToggle(y, label, icon)
-        local lbl = Instance.new("TextLabel", Main)
-        lbl.Size = UDim2.new(1, -120, 0, 25)
-        lbl.Position = UDim2.new(0, 15, 0, y)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = icon .. " " .. label
-        lbl.TextColor3 = COLORS.TEXT
-        lbl.TextSize = 14
-        lbl.Font = Enum.Font.GothamBold
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
-
-        local state = Instance.new("TextLabel", Main)
-        state.Size = UDim2.new(0, 45, 0, 25)
-        state.Position = UDim2.new(1, -120, 0, y)
-        state.BackgroundTransparency = 1
-        state.Text = "OFF"
-        state.TextColor3 = COLORS.RED
-        state.TextSize = 13
-        state.Font = Enum.Font.GothamBold
-        state.TextXAlignment = Enum.TextXAlignment.Right
-
-        local track = Instance.new("Frame", Main)
-        track.Size = UDim2.new(0, 50, 0, 26)
-        track.Position = UDim2.new(1, -65, 0, y)
-        track.BackgroundColor3 = COLORS.TRACK_OFF
-        track.BorderSizePixel = 0
-        Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
-
-        local knob = Instance.new("Frame", track)
-        knob.Size = UDim2.new(0, 20, 0, 20)
-        knob.Position = UDim2.new(0, 3, 0.5, -10)
-        knob.BackgroundColor3 = COLORS.KNOB
-        knob.BorderSizePixel = 0
-        Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
-
-        local btn = Instance.new("TextButton", Main)
-        btn.Size = UDim2.new(0, 110, 0, 36)
-        btn.Position = UDim2.new(1, -120, 0, y - 5)
-        btn.BackgroundTransparency = 1
-        btn.Text = ""
-
-        return {track = track, knob = knob, state = state, btn = btn}
-    end
-
-    local speedToggle = makeToggle(50, "Speed Bypass (700)", "⚡")
-    local farmToggle = makeToggle(95, "Auto Farm Best", "🎯")
-
-    local Status = Instance.new("TextLabel", Main)
-    Status.Size = UDim2.new(1, -30, 0, 20)
-    Status.Position = UDim2.new(0, 15, 0, 145)
-    Status.BackgroundTransparency = 1
-    Status.Text = "Status: Ready"
-    Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-    Status.TextSize = 11
-    Status.Font = Enum.Font.Gotham
-    Status.TextXAlignment = Enum.TextXAlignment.Left
-
-    return {
-        ScreenGui = ScreenGui, Main = Main,
-        speedToggle = speedToggle, farmToggle = farmToggle,
-        Status = Status, CloseBtn = CloseBtn
-    }
-end
-
-local ui = createUI()
-
-local function setToggle(t, on)
-    t.track.BackgroundColor3 = on and COLORS.GREEN or COLORS.TRACK_OFF
-    t.knob.Position = on and UDim2.new(0, 27, 0.5, -10) or UDim2.new(0, 3, 0.5, -10)
-    t.state.Text = on and "ON" or "OFF"
-    t.state.TextColor3 = on and COLORS.GREEN or COLORS.RED
-end
-
--- Speed toggle
-ui.speedToggle.btn.MouseButton1Click:Connect(function()
-    State.speedEnabled = not State.speedEnabled
-    setToggle(ui.speedToggle, State.speedEnabled)
-    
-    if State.speedEnabled then
-        if speedReady then
-            startSpeed(State.speedValue)
-            ui.Status.Text = "Status: ⚡ Speed ON (" .. State.speedValue .. ")"
-            ui.Status.TextColor3 = COLORS.GREEN
-        else
-            ui.Status.Text = "Status: ❌ Speed bypass failed"
-            ui.Status.TextColor3 = COLORS.RED
-            State.speedEnabled = false
-            setToggle(ui.speedToggle, false)
-        end
-    else
-        stopSpeed()
-        ui.Status.Text = "Status: ⚡ Speed OFF"
-        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-    end
-end)
-
--- Farm toggle
-ui.farmToggle.btn.MouseButton1Click:Connect(function()
-    if not State.farmEnabled then
-        if not loadModules() then
-            ui.Status.Text = "Status: ❌ EggState not found"
-            ui.Status.TextColor3 = COLORS.RED
-            return
-        end
-        State.farmEnabled = true
-        setToggle(ui.farmToggle, true)
-        ui.Status.Text = "Status: 🎯 Auto Farm ON"
-        ui.Status.TextColor3 = COLORS.GREEN
-        
-        task.spawn(function()
-            while State.farmEnabled do
-                pcall(farmCycle)
-                task.wait(0.1)
+MainTab:CreateToggle({
+    name = "Auto TP Chicken Egg",
+    currentValue = false,
+    flag = "AutoTPChickenEgg",
+    callback = function(value)
+        if value then
+            if utility.running then
+                warn("[AUTO] Already running!")
+                return
             end
-        end)
-    else
-        State.farmEnabled = false
-        setToggle(ui.farmToggle, false)
-        ui.Status.Text = "Status: 🎯 Auto Farm OFF"
-        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-    end
-end)
+            task.spawn(function()
+                utility:run()
+            end)
+        else
+            utility.running = false
+            warn("[AUTO] Stopped.")
+        end
+    end,
+})
 
-ui.CloseBtn.MouseButton1Click:Connect(function()
-    State.farmEnabled = false
-    State.speedEnabled = false
-    stopSpeed()
-    ui.ScreenGui:Destroy()
-end)
+MainTab:CreateSection("Info")
 
-if speedReady then
-    ui.Status.Text = "Status: ✅ Ready (Speed 700)"
-    ui.Status.TextColor3 = COLORS.GREEN
-else
-    ui.Status.Text = "Status: ⚠️ Speed bypass failed"
-    ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-end
+MainTab:CreateParagraph({
+    Title = "Flow",
+    Content = "TP Chicken Egg → Steal → Wait Hatch → TP Best Egg → Stay",
+})
+
+MainTab:CreateButton({
+    name = "Refresh Eggs",
+    callback = function()
+        if not utility.EggState then utility:init() end
+        local chicken = utility:getChickenEgg()
+        local best = utility:getBestEgg()
+        if chicken then
+            warn(("[REFRESH] Chicken Egg: %s"):format(chicken.Uid))
+        else
+            warn("[REFRESH] Walang chicken egg.")
+        end
+        if best then
+            warn(("[REFRESH] Best Egg: %s (%s)"):format(best.Uid, best.AreaId))
+        else
+            warn("[REFRESH] Walang best egg.")
+        end
+    end,
+})
