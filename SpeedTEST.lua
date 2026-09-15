@@ -1,11 +1,10 @@
 -- ============================================================
--- STEAL AN EGG — TP Chicken → Grab → Wait Peck → TP Best Egg → Stay
+-- STEAL AN EGG — TP Forest → Grab Any Egg → Wait Hit → TP Best
 -- ============================================================
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService        = game:GetService("RunService")
-local TweenService      = game:GetService("TweenService")
 local Workspace         = game:GetService("Workspace")
 local CoreGui           = game:GetService("CoreGui")
 local LocalPlayer       = Players.LocalPlayer
@@ -16,8 +15,8 @@ local LocalPlayer       = Players.LocalPlayer
 local State = {
     farmEnabled  = false,
     minArea      = 9,
-    chickenAreas = 3,
-    knockbackThreshold = 15,
+    forestArea   = "Forest",
+    hitThreshold = 15,
 }
 
 local AREA_NAMES = {
@@ -30,7 +29,6 @@ local AREA_NAMES = {
 -- MODULES
 -- ============================================================
 local EggState = nil
-local AreaEggSlotIdentity = nil
 
 local function loadModules()
     if EggState then return true end
@@ -39,14 +37,6 @@ local function loadModules()
         if client then
             local es = client:FindFirstChild("EggState")
             if es then EggState = require(es) end
-        end
-        local shared = ReplicatedStorage:FindFirstChild("Shared")
-        if shared then
-            local util = shared:FindFirstChild("Util")
-            if util then
-                local aes = util:FindFirstChild("AreaEggSlotIdentity")
-                if aes then AreaEggSlotIdentity = require(aes) end
-            end
         end
     end)
     return ok and EggState ~= nil
@@ -58,11 +48,6 @@ end
 local function getHRP()
     local c = LocalPlayer.Character
     return c and c:FindFirstChild("HumanoidRootPart")
-end
-
-local function getHum()
-    local c = LocalPlayer.Character
-    return c and c:FindFirstChildOfClass("Humanoid")
 end
 
 local function getRarityNumber(rec)
@@ -94,9 +79,9 @@ local function tpTo(pos)
 end
 
 -- ============================================================
--- 🐔 FIND CHICKEN EGG (area 1-3)
+-- 🐔 FIND ANY EGG SA FOREST
 -- ============================================================
-local function findChickenEgg()
+local function findForestEgg()
     if not EggState then return nil, nil end
     local ok, fieldEggs = pcall(function() return EggState.ReadFieldEggs() end)
     if not ok or not fieldEggs or not fieldEggs.Records then return nil, nil end
@@ -108,12 +93,7 @@ local function findChickenEgg()
 
     for _, rec in ipairs(fieldEggs.Records) do
         if rec.State == "Slot" or rec.State == "Dropped" then
-            local areaIdx = nil
-            for i, name in ipairs(AREA_NAMES) do
-                if rec.AreaId == name then areaIdx = i; break end
-            end
-            
-            if areaIdx and areaIdx <= State.chickenAreas then
+            if rec.AreaId == State.forestArea then
                 local model = Workspace:FindFirstChild("AreaEggSlotsClient", true)
                     and Workspace.AreaEggSlotsClient:FindFirstChild(rec.Uid)
                     or Workspace:FindFirstChild(rec.Uid, true)
@@ -195,16 +175,16 @@ local function grabEgg(rec, model)
 end
 
 -- ============================================================
--- ⚡ WAIT FOR PECK
+-- ⚡ WAIT FOR HIT
 -- ============================================================
-local function waitForPeck(timeout)
+local function waitForHit(timeout)
     timeout = timeout or 15
     local hrp = getHRP()
     if not hrp then return false end
     
     local lastPos = hrp.Position
     local t0 = tick()
-    local pecked = false
+    local hit = false
     
     local conn = RunService.Heartbeat:Connect(function()
         local h = getHRP()
@@ -215,22 +195,22 @@ local function waitForPeck(timeout)
         local posDelta = (h.Position - lastPos).Magnitude
         local verticalVel = math.abs(velocity.Y)
         
-        if speed > State.knockbackThreshold 
+        if speed > State.hitThreshold 
            or posDelta > 2 
            or verticalVel > 20 then
-            pecked = true
+            hit = true
         end
         
         lastPos = h.Position
     end)
     
-    while tick() - t0 < timeout and not pecked do
+    while tick() - t0 < timeout and not hit do
         if not State.farmEnabled then break end
         task.wait(0.05)
     end
     
     conn:Disconnect()
-    return pecked
+    return hit
 end
 
 -- ============================================================
@@ -240,43 +220,43 @@ local function farmCycle()
     if not State.farmEnabled then return end
     if not loadModules() then return end
 
-    -- ============ STEP 1: TP sa chicken egg ============
-    ui.Status.Text = "Status: 🐔 TP to chicken..."
+    -- STEP 1: TP sa Forest
+    ui.Status.Text = "Status: 🐔 TP to Forest..."
     ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
     
-    local chickenRec, chickenModel = findChickenEgg()
-    if not chickenRec or not chickenModel then
-        print("[Farm] No chicken egg found")
-        task.wait(0.5)
+    local forestRec, forestModel = findForestEgg()
+    if not forestRec or not forestModel then
+        print("[Farm] No egg in Forest — retrying")
+        task.wait(1)
         return
     end
 
-    local chickenPart = chickenModel.PrimaryPart or chickenModel:FindFirstChildWhichIsA("BasePart", true)
-    if not chickenPart then return end
+    local forestPart = forestModel.PrimaryPart or forestModel:FindFirstChildWhichIsA("BasePart", true)
+    if not forestPart then return end
 
-    tpTo(chickenPart.Position)
+    tpTo(forestPart.Position)
     task.wait(0.3)
 
-    -- ============ STEP 2: Grab chicken egg ============
-    ui.Status.Text = "Status: 🥚 Grabbing chicken..."
-    grabEgg(chickenRec, chickenModel)
-    print("[Farm] ✅ Chicken grabbed")
+    -- STEP 2: Grab any Forest egg
+    ui.Status.Text = "Status: 🥚 Grabbing Forest egg..."
+    grabEgg(forestRec, forestModel)
+    print("[Farm] ✅ Forest egg grabbed")
 
-    -- ============ STEP 3: Wait for peck ============
-    ui.Status.Text = "Status: 🐔 Waiting for peck..."
+    -- STEP 3: Wait for hit
+    ui.Status.Text = "Status: 🐔 Waiting for hit..."
     ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
     
-    local pecked = waitForPeck(15)
+    local hit = waitForHit(15)
     
-    if not pecked then
-        print("[Farm] No peck detected — retrying")
+    if not hit then
+        print("[Farm] No hit detected — retrying")
         task.wait(0.5)
         return
     end
     
-    print("[Farm] ✅ Pecked! TP to best egg...")
+    print("[Farm] ✅ Hit! TP to best egg...")
 
-    -- ============ STEP 4: TP sa best egg ============
+    -- STEP 4: TP sa best egg
     ui.Status.Text = "Status: 🎯 TP to best egg..."
     ui.Status.TextColor3 = Color3.fromRGB(0, 180, 90)
     
@@ -296,14 +276,16 @@ local function farmCycle()
     tpTo(bestPart.Position)
     task.wait(0.3)
 
-    -- ============ STEP 5: Grab best egg ============
+    -- STEP 5: Grab best egg
     ui.Status.Text = "Status: 🥚 Grabbing best egg..."
     grabEgg(bestRec, bestModel)
 
-    -- ============ STEP 6: STAY ============
+    -- STEP 6: STAY
     ui.Status.Text = "Status: 🏠 Staying at best egg area"
     ui.Status.TextColor3 = COLORS.GREEN
-    print("[Farm] ✅ Stay at best egg area")
+    print("[Farm] ✅ Stay at best egg")
+    
+    -- Stay — walang return
 end
 
 -- ============================================================
@@ -375,7 +357,6 @@ local function createUI()
     CloseBtn.Font = Enum.Font.GothamBold
     Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
 
-    -- Farm toggle (only one)
     local lbl = Instance.new("TextLabel", Main)
     lbl.Size = UDim2.new(1, -120, 0, 25)
     lbl.Position = UDim2.new(0, 15, 0, 55)
@@ -442,7 +423,6 @@ local function setToggle(t, on)
     t.state.TextColor3 = on and COLORS.GREEN or COLORS.RED
 end
 
--- Farm toggle
 ui.farmToggle.btn.MouseButton1Click:Connect(function()
     if not State.farmEnabled then
         if not loadModules() then
