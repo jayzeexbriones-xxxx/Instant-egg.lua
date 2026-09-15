@@ -1,379 +1,357 @@
--- ============================================================
--- STEAL AN EGG — Forest Bait → TP Best → Return Home
--- ============================================================
+-- ============================================
+-- STEP 1: LOAD SPEED BYPASS
+-- ============================================
+pcall(function(...)
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/Lutosys/opensrc/refs/heads/main/stealaeggspeedbypass.lua"))()
+end)
 
-local Players           = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService        = game:GetService("RunService")
-local Workspace         = game:GetService("Workspace")
-local CoreGui           = game:GetService("CoreGui")
-local LocalPlayer       = Players.LocalPlayer
-
--- ============================================================
--- CONFIG
--- ============================================================
-local Config = {
-    minArea          = 9,       -- Best egg area (9+)
-    hitThreshold     = 15,      -- Knockback sensitivity
-    hitTimeout       = 8,       -- Max wait for guard hit
-    grabTimeout      = 3,       -- Max wait for grab
-    forestAreaName   = "Forest",
+-- ============================================
+-- STEP 2: SERVICES
+-- ============================================
+local utility = {
+    RunService = game:GetService("RunService"),
+    Players = game:GetService("Players"),
+    ProximityPromptService = game:GetService("ProximityPromptService"),
+    ReplicatedStorage = game:GetService("ReplicatedStorage"),
+    Workspace = game:GetService("Workspace"),
+    CoreGui = game:GetService("CoreGui"),
+    conns = {},
 }
 
--- ============================================================
--- SERVICES
--- ============================================================
-local EggState = nil
-local Remotes = nil
-local Save = nil
-local PlotState = nil
+-- ============================================
+-- STEP 3: CONFIG
+-- ============================================
+getgenv().config = {
+    speedValue = 260,
+    autoGrabRadius = 30,
+    positionFallbackRadius = 15,
+}
 
-local function loadModules()
-    if EggState then return true end
-    local ok = pcall(function()
-        local client = ReplicatedStorage:FindFirstChild("Client")
-        if client then
-            local es = client:FindFirstChild("EggState")
-            if es then EggState = require(es) end
-            local ps = client:FindFirstChild("PlotState")
-            if ps then PlotState = require(ps) end
-        end
-        local shared = ReplicatedStorage:FindFirstChild("Shared")
-        if shared then
-            local rem = shared:FindFirstChild("Remotes")
-            if rem then Remotes = require(rem) end
-            local sv = shared:FindFirstChild("Save")
-            if sv then Save = require(sv) end
-        end
+-- ============================================
+-- STEP 4: BIND/UNBIND HELPERS
+-- ============================================
+function utility:bind(connection, callback)
+    local s, r = pcall(function(...)
+        local conn = connection:Connect(callback)
+        self.conns[conn] = conn
+        return self.conns[conn]
     end)
-    return ok and EggState ~= nil
+    if s and r then return r end
+    return warn('failed to bind: '..tostring(r))
 end
 
--- ============================================================
--- HELPERS
--- ============================================================
-local AREA_NAMES = {
-    "Forest", "Lake", "Desert", "Jungle", "Snow",
-    "Volcano", "Abyss Ocean", "Prehistoric", "Cosmic",
-    "Cherry Blossom", "Titan Temple",
-}
-
-local function getHRP()
-    local c = LocalPlayer.Character
-    return c and c:FindFirstChild("HumanoidRootPart")
-end
-
-local function getHum()
-    local c = LocalPlayer.Character
-    return c and c:FindFirstChildOfClass("Humanoid")
-end
-
-local function getRarityNumber(rec)
-    if rec and rec.Rarity and type(rec.Rarity) == "table" then
-        return rec.Rarity.RarityNumber or 0
-    end
-    return 0
-end
-
-local function getAssetScale(rec)
-    return tonumber(rec.AssetScale) or 1
-end
-
-local function hasEgg()
-    local c = LocalPlayer.Character
-    if not c then return false end
-    for _, t in ipairs(c:GetChildren()) do
-        if t:IsA("Tool") and t:GetAttribute("ItemType") == "AssetEgg" then
+function utility:unbind(connection)
+    local s, r = pcall(function(...)
+        local conn = self.conns[connection]
+        if conn then
+            conn:Disconnect()
+            self.conns[connection] = nil
             return true
         end
-    end
-    return false
-end
-
--- ============================================================
--- TP TO
--- ============================================================
-local function tpTo(pos)
-    local char = LocalPlayer.Character
-    if not char then return false end
-    pcall(function()
-        char:PivotTo(CFrame.new(pos + Vector3.new(0, 3, 0)))
+        return false
     end)
-    local hrp = getHRP()
-    if hrp then
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.AssemblyAngularVelocity = Vector3.zero
-    end
-    return true
+    if s and r then return true end
+    return warn("failed to unbind")
 end
 
--- ============================================================
--- FIND EGG
--- ============================================================
-local function findEgg(areaName)
-    if not EggState then return nil, nil end
-    local ok, data = pcall(function() return EggState.ReadFieldEggs() end)
-    if not ok or not data or not data.Records then return nil, nil end
+-- ============================================
+-- STEP 5: INSTANT PICKUP
+-- ============================================
+function utility:startInstantPickup()
+    self.LocalPlayer = self.Players.LocalPlayer
+    if not self.LocalPlayer then return warn('no localplayer') end
 
-    for _, rec in ipairs(data.Records) do
-        if (rec.State == "Slot" or rec.State == "Dropped") and rec.AreaId == areaName then
-            local model = Workspace:FindFirstChild("AreaEggSlotsClient", true)
-                and Workspace.AreaEggSlotsClient:FindFirstChild(rec.Uid)
-                or Workspace:FindFirstChild(rec.Uid, true)
-            if model then
-                local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
-                if part then
-                    return rec, model
-                end
-            end
+    self.instantConn = self:bind(self.ProximityPromptService.PromptButtonHoldBegan, function(ProximityPrompt, Player)
+        if Player == self.LocalPlayer and tostring(ProximityPrompt) == "CarryAreaEgg" then
+            ProximityPrompt.HoldDuration = 0
         end
-    end
-    return nil, nil
+    end)
+
+    return self.instantConn ~= nil
 end
 
-local function findBestEgg()
-    if not EggState then return nil, nil end
-    local ok, data = pcall(function() return EggState.ReadFieldEggs() end)
-    if not ok or not data or not data.Records then return nil, nil end
-
-    local bestRec, bestModel, bestScore = nil, nil, -1
-    for _, rec in ipairs(data.Records) do
-        if rec.State == "Slot" or rec.State == "Dropped" then
-            local idx = nil
-            for i, name in ipairs(AREA_NAMES) do
-                if rec.AreaId == name then idx = i; break end
-            end
-            if idx and idx >= Config.minArea then
-                local model = Workspace:FindFirstChild("AreaEggSlotsClient", true)
-                    and Workspace.AreaEggSlotsClient:FindFirstChild(rec.Uid)
-                    or Workspace:FindFirstChild(rec.Uid, true)
-                if model then
-                    local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
-                    if part then
-                        local score = (getRarityNumber(rec) * 1000) + getAssetScale(rec)
-                        if score > bestScore then
-                            bestScore = score
-                            bestRec = rec
-                            bestModel = model
-                        end
-                    end
-                end
-            end
-        end
+function utility:stopInstantPickup()
+    if self.instantConn then
+        self:unbind(self.instantConn)
+        self.instantConn = nil
     end
-    return bestRec, bestModel
 end
 
--- ============================================================
--- GRAB EGG (with retries)
--- ============================================================
-local function grabEgg(rec, model)
-    for attempt = 1, 5 do
-        -- Try remote
-        pcall(function()
-            if Remotes and Remotes.EggWorld and Remotes.EggWorld.AskFieldEggCarry then
-                Remotes.EggWorld.AskFieldEggCarry:InvokeServer({ Uid = rec.Uid })
-            end
-        end)
-        pcall(function()
-            if EggState and EggState.CarryFieldEgg then
-                EggState.CarryFieldEgg(rec.Uid)
-            end
-        end)
+-- ============================================
+-- STEP 6: ANTI-RAGDOLL
+-- ============================================
+utility.antiRagdollEnabled = false
+utility.antiRagdollConn = nil
+utility.ragdollConns = {}
 
-        task.wait(0.08)
+function utility:startAntiRagdoll()
+    self.LocalPlayer = self.Players.LocalPlayer
+    if not self.LocalPlayer then return false, "No LocalPlayer" end
+    if not getconnections then return false, "Missing getconnections" end
 
-        -- Try prompt
-        local prompt = model:FindFirstChild("CarryAreaEgg", true)
-            or model:FindFirstChildWhichIsA("ProximityPrompt", true)
-        if prompt and fireproximityprompt then
+    self.Packages = self.ReplicatedStorage:FindFirstChild("Packages")
+    if not self.Packages then return false, "No Packages" end
+
+    self.Networking = self.Packages:FindFirstChild("Networking")
+    if not self.Networking then return false, "No Networking" end
+
+    self.RigSync = self.Networking:FindFirstChild("RE/RigSync/Refresh")
+    if not self.RigSync then return false, "No RE/RigSync/Refresh" end
+
+    local conns = getconnections(self.RigSync.OnClientEvent)
+    if conns then
+        for _, conn in next, conns do
             pcall(function()
-                prompt.Enabled = true
-                prompt.HoldDuration = 0
-                prompt.RequiresLineOfSight = false
-                prompt.MaxActivationDistance = 9999
-                fireproximityprompt(prompt, 0)
+                conn:Disconnect()
+                table.insert(utility.ragdollConns, conn)
+            end)
+        end
+    end
+
+    utility.antiRagdollConn = self.RunService.Heartbeat:Connect(function()
+        if not utility.antiRagdollEnabled then return end
+
+        local char = self.LocalPlayer.Character
+        if not char then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+
+        for _, obj in next, char:GetDescendants() do
+            if obj:IsA("RagdollConstraint") or obj:IsA("BallSocketConstraint") then
+                pcall(function() obj:Destroy() end)
+            end
+        end
+
+        if hum:GetState() == Enum.HumanoidStateType.Physics or
+           hum:GetState() == Enum.HumanoidStateType.Ragdoll then
+            pcall(function()
+                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
             end)
         end
 
-        task.wait(0.15)
-
-        if hasEgg() then return true end
-    end
-    return false
-end
-
--- ============================================================
--- WAIT FOR GUARD HIT (velocity/position detection)
--- ============================================================
-local function waitForHit(timeout)
-    timeout = timeout or Config.hitTimeout
-    local hrp = getHRP()
-    if not hrp then return false end
-
-    local lastPos = hrp.Position
-    local t0 = tick()
-    local hit = false
-
-    local conn = RunService.Heartbeat:Connect(function()
-        local h = getHRP()
-        if not h then return end
-        local vel = h.AssemblyLinearVelocity
-        local speed = vel.Magnitude
-        local delta = (h.Position - lastPos).Magnitude
-        local vVel = math.abs(vel.Y)
-
-        if speed > Config.hitThreshold or delta > 2 or vVel > 20 then
-            hit = true
-        end
-        lastPos = h.Position
-    end)
-
-    while tick() - t0 < timeout and not hit do
-        task.wait(0.05)
-    end
-
-    conn:Disconnect()
-    return hit
-end
-
--- ============================================================
--- RETURN HOME (TP sa plot)
--- ============================================================
-local function getPlotPos()
-    local pos = nil
-    pcall(function()
-        if PlotState then
-            local plot = PlotState.ResolvePlot(LocalPlayer)
-            if plot and plot.RespawnPointCFrame then
-                pos = plot.RespawnPointCFrame.Position
-            elseif plot and plot.CenterPoint then
-                pos = plot.CenterPoint.Position
+        for _, joint in next, char:GetDescendants() do
+            if joint:IsA("Motor6D") and joint.Enabled == false then
+                pcall(function() joint.Enabled = true end)
             end
         end
     end)
-    return pos or Vector3.new(544.4, 74.2, -364.2) -- fallback
+
+    return true
 end
 
-local function returnHome()
-    local plotPos = getPlotPos()
-    if plotPos then
-        tpTo(plotPos)
-        task.wait(0.5)
+function utility:stopAntiRagdoll()
+    if utility.antiRagdollConn then
+        utility.antiRagdollConn:Disconnect()
+        utility.antiRagdollConn = nil
     end
+    utility.ragdollConns = {}
 end
 
--- ============================================================
--- MAIN CYCLE
--- ============================================================
-local running = false
+-- ============================================
+-- STEP 7: AUTO-GRAB DROPPED EGG
+-- ============================================
+utility.autoGrabEnabled = false
+utility.autoGrabConn = nil
+utility.lastEggUid = nil
+utility.lastEggPos = nil
+utility.grabCooldown = 0
 
-local function mainCycle()
-    if not running then return end
-    if not loadModules() then
-        task.wait(0.5)
-        return
+function utility:getCurrentEggUid()
+    local char = self.LocalPlayer.Character
+    if not char then return nil end
+    for _, tool in next, char:GetChildren() do
+        if tool:IsA("Tool") and tool:GetAttribute("ItemType") == "AssetEgg" then
+            return tool:GetAttribute("UID") or tool:GetAttribute("Uid")
+        end
     end
+    return nil
+end
 
-    -- ============ STEP 1: Find Forest egg (bait) ============
-    ui.Status.Text = "Status: 🐔 Finding Forest egg..."
-    ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+function utility:startAutoGrab()
+    self.LocalPlayer = self.Players.LocalPlayer
+    if not self.LocalPlayer then return false, "No LocalPlayer" end
+    if not fireproximityprompt then return false, "Missing fireproximityprompt" end
 
-    local baitRec, baitModel = findEgg(Config.forestAreaName)
-    if not baitRec or not baitModel then
-        print("[Farm] No Forest egg — skipping")
-        task.wait(0.5)
-        return
-    end
+    utility.lastEggUid = nil
+    utility.lastEggPos = nil
+    utility.grabCooldown = 0
 
-    local baitPart = baitModel.PrimaryPart or baitModel:FindFirstChildWhichIsA("BasePart", true)
-    if not baitPart then return end
+    utility.autoGrabConn = self.RunService.Heartbeat:Connect(function()
+        if not utility.autoGrabEnabled then return end
 
-    -- ============ STEP 2: TP sa Forest egg ============
-    ui.Status.Text = "Status: 🚀 TP to Forest..."
-    tpTo(baitPart.Position)
-    task.wait(0.3)
+        local now = tick()
+        if now < utility.grabCooldown then return end
 
-    -- ============ STEP 3: Grab bait egg ============
-    ui.Status.Text = "Status: 🥚 Grabbing bait..."
-    local baitGrabbed = grabEgg(baitRec, baitModel)
-    print("[Farm] Bait grabbed:", baitGrabbed)
+        local char = self.LocalPlayer.Character
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
 
-    -- ============ STEP 4: Wait for hit ============
-    ui.Status.Text = "Status: ⚡ Waiting for hit..."
-    ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+        local currentUid = utility:getCurrentEggUid()
 
-    -- Get Forest guard and touch it
-    pcall(function()
-        local guardAreas = Workspace:FindFirstChild("__OBJECTS", true)
-            and Workspace.__OBJECTS:FindFirstChild("Areas")
-            and Workspace.__OBJECTS.Areas:FindFirstChild("GuardAreas")
-        if guardAreas then
-            local forest = guardAreas:FindFirstChild("Forest")
-            if forest then
-                local guard = forest:FindFirstChild("Guard")
-                if guard then
-                    local collider = guard:FindFirstChild("Collider")
-                        or guard:FindFirstChild("HumanoidRootPart")
-                        or guard.PrimaryPart
-                    if collider and firetouchinterest then
-                        local hrp = getHRP()
-                        if hrp then
-                            firetouchinterest(hrp, collider, 0)
-                            task.wait(0.05)
-                            firetouchinterest(hrp, collider, 1)
+        if currentUid then
+            utility.lastEggUid = currentUid
+            utility.lastEggPos = hrp.Position
+            return
+        end
+
+        if not utility.lastEggUid then return end
+
+        local myPos = hrp.Position
+        local closestPrompt = nil
+        local closestDist = getgenv().config.autoGrabRadius
+
+        for _, obj in next, self.Workspace:GetDescendants() do
+            if obj:IsA("BasePart") and obj.Name:lower():find("egg") then
+                local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt")
+                if not prompt and obj.Parent then
+                    prompt = obj.Parent:FindFirstChildWhichIsA("ProximityPrompt")
+                    if not prompt and obj.Parent.Parent then
+                        prompt = obj.Parent.Parent:FindFirstChildWhichIsA("ProximityPrompt")
+                    end
+                end
+
+                if prompt then
+                    local eggUid = obj:GetAttribute("UID") 
+                        or obj:GetAttribute("Uid")
+                        or (obj.Parent and (obj.Parent:GetAttribute("UID") or obj.Parent:GetAttribute("Uid")))
+                    
+                    local matchUid = false
+                    if eggUid and utility.lastEggUid then
+                        matchUid = tostring(eggUid) == tostring(utility.lastEggUid)
+                    end
+
+                    local matchPos = false
+                    if utility.lastEggPos then
+                        local distFromDrop = (obj.Position - utility.lastEggPos).Magnitude
+                        matchPos = distFromDrop <= getgenv().config.positionFallbackRadius
+                    end
+
+                    if matchUid or matchPos then
+                        local dist = (obj.Position - myPos).Magnitude
+                        if dist < closestDist then
+                            closestDist = dist
+                            closestPrompt = prompt
                         end
                     end
                 end
             end
         end
+
+        if closestPrompt then
+            pcall(function()
+                closestPrompt.HoldDuration = 0
+                fireproximityprompt(closestPrompt, 0)
+            end)
+            print("[AutoGrab] ✅ Grabbed YOUR dropped egg at " .. math.floor(closestDist) .. " studs")
+            utility.grabCooldown = tick() + 0.5
+        end
     end)
 
-    local hit = waitForHit(Config.hitTimeout)
-    print("[Farm] Hit detected:", hit)
-
-    if not hit then
-        print("[Farm] No hit — returning home")
-        returnHome()
-        task.wait(0.5)
-        return
-    end
-
-    -- ============ STEP 5: TP sa best egg ============
-    ui.Status.Text = "Status: 🎯 TP to best egg..."
-    ui.Status.TextColor3 = Color3.fromRGB(0, 180, 90)
-
-    local bestRec, bestModel = findBestEgg()
-    if not bestRec or not bestModel then
-        print("[Farm] No best egg — returning home")
-        returnHome()
-        task.wait(0.5)
-        return
-    end
-
-    local bestPart = bestModel.PrimaryPart or bestModel:FindFirstChildWhichIsA("BasePart", true)
-    if not bestPart then return end
-
-    tpTo(bestPart.Position)
-    task.wait(0.3)
-
-    -- ============ STEP 6: Grab best egg ============
-    ui.Status.Text = "Status: 🥚 Grabbing best egg..."
-    local bestGrabbed = grabEgg(bestRec, bestModel)
-    print("[Farm] Best egg grabbed:", bestGrabbed)
-
-    -- ============ STEP 7: Return home ============
-    ui.Status.Text = "Status: 🏠 Returning home..."
-    returnHome()
-    task.wait(0.5)
-
-    ui.Status.Text = "Status: ✅ Cycle complete"
-    ui.Status.TextColor3 = Color3.fromRGB(0, 180, 90)
+    return true
 end
 
--- ============================================================
--- UI
--- ============================================================
+function utility:stopAutoGrab()
+    if utility.autoGrabConn then
+        utility.autoGrabConn:Disconnect()
+        utility.autoGrabConn = nil
+    end
+    utility.lastEggUid = nil
+    utility.lastEggPos = nil
+    utility.grabCooldown = 0
+end
+
+-- ============================================
+-- STEP 8: ANTI-TRAP (NEW!)
+-- ============================================
+utility.antiTrapEnabled = false
+utility.antiTrapConn = nil
+utility.origCanTouch = {}
+
+function utility:disableGuardTouch()
+    for _, obj in next, self.Workspace:GetDescendants() do
+        if obj:IsA("BasePart") and obj.CanTouch then
+            local name = obj.Name:lower()
+            local parentName = obj.Parent and obj.Parent.Name:lower() or ""
+            if name:find("guard") or parentName:find("guard") then
+                if utility.origCanTouch[obj] == nil then
+                    utility.origCanTouch[obj] = obj.CanTouch
+                end
+                obj.CanTouch = false
+            end
+        end
+    end
+end
+
+function utility:startAntiTrap()
+    self.LocalPlayer = self.Players.LocalPlayer
+    if not self.LocalPlayer then return false, "No LocalPlayer" end
+
+    -- 1. Disable AntiAFK script
+    pcall(function()
+        local ps = self.LocalPlayer:FindFirstChild("PlayerScripts")
+        local gameFolder = ps and ps:FindFirstChild("Game")
+        local antiAfk = gameFolder and gameFolder:FindFirstChild("AntiAFK")
+        if antiAfk then antiAfk:Destroy() end
+    end)
+
+    -- 2. Initial guard touch disable
+    self:disableGuardTouch()
+
+    -- 3. Continuous loop — re-disable kung nag-re-enable yung game
+    utility.antiTrapConn = self.RunService.Heartbeat:Connect(function()
+        if not utility.antiTrapEnabled then return end
+
+        -- Re-disable guard touch
+        self:disableGuardTouch()
+
+        -- Anti-ragdoll: keep getting up
+        local char = self.LocalPlayer.Character
+        if not char then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+
+        if hum.PlatformStand then
+            pcall(function() hum.PlatformStand = false end)
+        end
+
+        local state = hum:GetState()
+        if state == Enum.HumanoidStateType.Physics or
+           state == Enum.HumanoidStateType.Ragdoll or
+           state == Enum.HumanoidStateType.FallingDown then
+            pcall(function()
+                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end)
+        end
+
+        -- Restore Motor6D
+        for _, joint in next, char:GetDescendants() do
+            if joint:IsA("Motor6D") and joint.Enabled == false then
+                pcall(function() joint.Enabled = true end)
+            end
+        end
+    end)
+
+    return true
+end
+
+function utility:stopAntiTrap()
+    if utility.antiTrapConn then
+        utility.antiTrapConn:Disconnect()
+        utility.antiTrapConn = nil
+    end
+    -- Restore CanTouch
+    for obj, val in next, utility.origCanTouch do
+        if obj and obj.Parent then
+            pcall(function() obj.CanTouch = val end)
+        end
+    end
+    utility.origCanTouch = {}
+end
+
+-- ============================================
+-- STEP 9: UI
+-- ============================================
 local COLORS = {
     BG = Color3.fromRGB(25, 25, 30),
     TITLE_BG = Color3.fromRGB(35, 35, 42),
@@ -381,54 +359,53 @@ local COLORS = {
     TEXT = Color3.fromRGB(255, 255, 255),
     GREEN = Color3.fromRGB(0, 180, 90),
     RED = Color3.fromRGB(200, 50, 50),
-    YELLOW = Color3.fromRGB(255, 200, 0),
     KNOB = Color3.fromRGB(255, 255, 255),
-    TRACK_OFF = Color3.fromRGB(70, 70, 80),
+    TRACK_OFF = Color3.fromRGB(70, 70, 80)
 }
 
 local function createUI()
-    if CoreGui:FindFirstChild("StealEggUI") then
-        CoreGui.StealEggUI:Destroy()
+    if utility.CoreGui:FindFirstChild("StealEggUI") then
+        utility.CoreGui.StealEggUI:Destroy()
     end
 
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "StealEggUI"
     ScreenGui.ResetOnSpawn = false
-    ScreenGui.Parent = CoreGui
+    ScreenGui.Parent = utility.CoreGui
 
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 260, 0, 135)
-    Main.Position = UDim2.new(0.5, -130, 0.5, -68)
+    Main.Size = UDim2.new(0, 260, 0, 310)
+    Main.Position = UDim2.new(0.5, -130, 0.5, -155)
     Main.BackgroundColor3 = COLORS.BG
     Main.BorderSizePixel = 0
     Main.Active = true
     Main.Draggable = true
     Main.Parent = ScreenGui
 
-    Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
-    local stroke = Instance.new("UIStroke", Main)
-    stroke.Color = COLORS.STROKE
+    local c1 = Instance.new("UICorner", Main)
+    c1.CornerRadius = UDim.new(0, 10)
+    local s1 = Instance.new("UIStroke", Main)
+    s1.Color = COLORS.STROKE
 
-    -- Title
     local TitleBar = Instance.new("Frame", Main)
     TitleBar.Size = UDim2.new(1, 0, 0, 35)
     TitleBar.BackgroundColor3 = COLORS.TITLE_BG
     TitleBar.BorderSizePixel = 0
-    Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
-
-    local Cover = Instance.new("Frame", TitleBar)
-    Cover.Size = UDim2.new(1, 0, 0, 10)
-    Cover.Position = UDim2.new(0, 0, 1, -10)
-    Cover.BackgroundColor3 = COLORS.TITLE_BG
-    Cover.BorderSizePixel = 0
+    local c2 = Instance.new("UICorner", TitleBar)
+    c2.CornerRadius = UDim.new(0, 10)
+    local TitleCover = Instance.new("Frame", TitleBar)
+    TitleCover.Size = UDim2.new(1, 0, 0, 10)
+    TitleCover.Position = UDim2.new(0, 0, 1, -10)
+    TitleCover.BackgroundColor3 = COLORS.TITLE_BG
+    TitleCover.BorderSizePixel = 0
 
     local Title = Instance.new("TextLabel", TitleBar)
     Title.Size = UDim2.new(1, -50, 1, 0)
     Title.Position = UDim2.new(0, 12, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "🥚 Forest Bait → Best Egg"
+    Title.Text = "🥚 Steal An Egg"
     Title.TextColor3 = COLORS.TEXT
-    Title.TextSize = 13
+    Title.TextSize = 14
     Title.Font = Enum.Font.GothamBold
     Title.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -440,68 +417,83 @@ local function createUI()
     CloseBtn.TextColor3 = COLORS.TEXT
     CloseBtn.TextSize = 14
     CloseBtn.Font = Enum.Font.GothamBold
-    Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
+    local c3 = Instance.new("UICorner", CloseBtn)
+    c3.CornerRadius = UDim.new(0, 6)
 
-    -- Toggle
-    local lbl = Instance.new("TextLabel", Main)
-    lbl.Size = UDim2.new(1, -120, 0, 25)
-    lbl.Position = UDim2.new(0, 15, 0, 55)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = "🎯 Auto Farm"
-    lbl.TextColor3 = COLORS.TEXT
-    lbl.TextSize = 14
-    lbl.Font = Enum.Font.GothamBold
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    local function makeToggle(y, label, icon)
+        local lbl = Instance.new("TextLabel", Main)
+        lbl.Size = UDim2.new(1, -120, 0, 25)
+        lbl.Position = UDim2.new(0, 15, 0, y)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = icon .. " " .. label
+        lbl.TextColor3 = COLORS.TEXT
+        lbl.TextSize = 14
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
 
-    local state = Instance.new("TextLabel", Main)
-    state.Size = UDim2.new(0, 45, 0, 25)
-    state.Position = UDim2.new(1, -120, 0, 55)
-    state.BackgroundTransparency = 1
-    state.Text = "OFF"
-    state.TextColor3 = COLORS.RED
-    state.TextSize = 13
-    state.Font = Enum.Font.GothamBold
-    state.TextXAlignment = Enum.TextXAlignment.Right
+        local state = Instance.new("TextLabel", Main)
+        state.Size = UDim2.new(0, 45, 0, 25)
+        state.Position = UDim2.new(1, -120, 0, y)
+        state.BackgroundTransparency = 1
+        state.Text = "OFF"
+        state.TextColor3 = COLORS.RED
+        state.TextSize = 13
+        state.Font = Enum.Font.GothamBold
+        state.TextXAlignment = Enum.TextXAlignment.Right
 
-    local track = Instance.new("Frame", Main)
-    track.Size = UDim2.new(0, 50, 0, 26)
-    track.Position = UDim2.new(1, -65, 0, 55)
-    track.BackgroundColor3 = COLORS.TRACK_OFF
-    track.BorderSizePixel = 0
-    Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
+        local track = Instance.new("Frame", Main)
+        track.Size = UDim2.new(0, 50, 0, 26)
+        track.Position = UDim2.new(1, -65, 0, y)
+        track.BackgroundColor3 = COLORS.TRACK_OFF
+        track.BorderSizePixel = 0
+        local tc = Instance.new("UICorner", track)
+        tc.CornerRadius = UDim.new(1, 0)
 
-    local knob = Instance.new("Frame", track)
-    knob.Size = UDim2.new(0, 20, 0, 20)
-    knob.Position = UDim2.new(0, 3, 0.5, -10)
-    knob.BackgroundColor3 = COLORS.KNOB
-    knob.BorderSizePixel = 0
-    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+        local knob = Instance.new("Frame", track)
+        knob.Size = UDim2.new(0, 20, 0, 20)
+        knob.Position = UDim2.new(0, 3, 0.5, -10)
+        knob.BackgroundColor3 = COLORS.KNOB
+        knob.BorderSizePixel = 0
+        local kc = Instance.new("UICorner", knob)
+        kc.CornerRadius = UDim.new(1, 0)
 
-    local btn = Instance.new("TextButton", Main)
-    btn.Size = UDim2.new(0, 110, 0, 36)
-    btn.Position = UDim2.new(1, -120, 0, 50)
-    btn.BackgroundTransparency = 1
-    btn.Text = ""
+        local btn = Instance.new("TextButton", Main)
+        btn.Size = UDim2.new(0, 110, 0, 36)
+        btn.Position = UDim2.new(1, -120, 0, y - 5)
+        btn.BackgroundTransparency = 1
+        btn.Text = ""
 
-    -- Status
+        return {track = track, knob = knob, state = state, btn = btn}
+    end
+
+    local speedToggle = makeToggle(50, "Speed Bypass", "⚡")
+    local pickupToggle = makeToggle(95, "Instant Pickup", "⚡")
+    local ragdollToggle = makeToggle(140, "Anti-Ragdoll", "🛡️")
+    local autoGrabToggle = makeToggle(185, "Auto-Grab My Drop", "🥚")
+    local antiTrapToggle = makeToggle(230, "Anti-Trap", "🪤")
+
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
-    Status.Position = UDim2.new(0, 15, 0, 100)
+    Status.Position = UDim2.new(0, 15, 0, 275)
     Status.BackgroundTransparency = 1
     Status.Text = "Status: Ready"
-    Status.TextColor3 = COLORS.YELLOW
-    Status.TextSize = 11
+    Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+    Status.TextSize = 12
     Status.Font = Enum.Font.Gotham
     Status.TextXAlignment = Enum.TextXAlignment.Left
 
     return {
-        ScreenGui = ScreenGui,
-        farmToggle = { track = track, knob = knob, state = state, btn = btn },
-        Status = Status,
-        CloseBtn = CloseBtn,
+        ScreenGui = ScreenGui, Main = Main,
+        speedToggle = speedToggle, pickupToggle = pickupToggle,
+        ragdollToggle = ragdollToggle, autoGrabToggle = autoGrabToggle,
+        antiTrapToggle = antiTrapToggle,
+        Status = Status, CloseBtn = CloseBtn
     }
 end
 
+-- ============================================
+-- STEP 10: WIRING
+-- ============================================
 local ui = createUI()
 
 local function setToggle(t, on)
@@ -511,34 +503,150 @@ local function setToggle(t, on)
     t.state.TextColor3 = on and COLORS.GREEN or COLORS.RED
 end
 
-ui.farmToggle.btn.MouseButton1Click:Connect(function()
-    if not running then
-        if not loadModules() then
-            ui.Status.Text = "Status: ❌ EggState not found"
-            ui.Status.TextColor3 = COLORS.RED
-            return
-        end
-        running = true
-        setToggle(ui.farmToggle, true)
-        ui.Status.Text = "Status: 🎯 Starting..."
-        ui.Status.TextColor3 = COLORS.GREEN
+-- ⚡ Speed
+utility.speedEnabled = false
+utility.speedConn = nil
 
-        task.spawn(function()
-            while running do
-                pcall(mainCycle)
-                task.wait(0.3)
-            end
+ui.speedToggle.btn.MouseButton1Click:Connect(function()
+    utility.speedEnabled = not utility.speedEnabled
+    setToggle(ui.speedToggle, utility.speedEnabled)
+    
+    if utility.speedEnabled then
+        if utility.speedConn then utility.speedConn:Disconnect() end
+        utility.speedConn = utility.RunService.Heartbeat:Connect(function()
+            if not utility.speedEnabled then return end
+            local char = utility.Players.LocalPlayer.Character
+            if not char then return end
+            local hum = char:FindFirstChild("Humanoid")
+            if not hum then return end
+            hum.WalkSpeed = getgenv().config.speedValue
         end)
+        ui.Status.Text = "Status: ⚡ Speed ON (" .. getgenv().config.speedValue .. ")"
+        ui.Status.TextColor3 = COLORS.GREEN
     else
-        running = false
-        setToggle(ui.farmToggle, false)
-        ui.Status.Text = "Status: ⏸ Stopped"
-        ui.Status.TextColor3 = COLORS.YELLOW
+        if utility.speedConn then utility.speedConn:Disconnect() utility.speedConn = nil end
+        local char = utility.Players.LocalPlayer.Character
+        if char then
+            local hum = char:FindFirstChild("Humanoid")
+            if hum then hum.WalkSpeed = 16 end
+        end
+        ui.Status.Text = "Status: ⚡ Speed OFF"
+        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
     end
 end)
 
+-- ⚡ Instant Pickup
+utility.pickupEnabled = false
+
+ui.pickupToggle.btn.MouseButton1Click:Connect(function()
+    utility.pickupEnabled = not utility.pickupEnabled
+    setToggle(ui.pickupToggle, utility.pickupEnabled)
+    
+    if utility.pickupEnabled then
+        local ok = utility:startInstantPickup()
+        if ok then
+            ui.Status.Text = "Status: ⚡ Instant Pickup ON"
+            ui.Status.TextColor3 = COLORS.GREEN
+        else
+            ui.Status.Text = "Status: ❌ Instant Pickup failed"
+            ui.Status.TextColor3 = COLORS.RED
+            utility.pickupEnabled = false
+            setToggle(ui.pickupToggle, false)
+        end
+    else
+        utility:stopInstantPickup()
+        ui.Status.Text = "Status: ⚡ Instant Pickup OFF"
+        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+    end
+end)
+
+-- 🛡️ Anti-Ragdoll
+utility.antiRagdollEnabled = false
+
+ui.ragdollToggle.btn.MouseButton1Click:Connect(function()
+    utility.antiRagdollEnabled = not utility.antiRagdollEnabled
+    setToggle(ui.ragdollToggle, utility.antiRagdollEnabled)
+    
+    if utility.antiRagdollEnabled then
+        local ok, err = utility:startAntiRagdoll()
+        if ok then
+            ui.Status.Text = "Status: 🛡️ Anti-Ragdoll ON"
+            ui.Status.TextColor3 = COLORS.GREEN
+        else
+            ui.Status.Text = "Status: ❌ Anti-Ragdoll failed"
+            ui.Status.TextColor3 = COLORS.RED
+            utility.antiRagdollEnabled = false
+            setToggle(ui.ragdollToggle, false)
+        end
+    else
+        utility:stopAntiRagdoll()
+        ui.Status.Text = "Status: 🛡️ Anti-Ragdoll OFF"
+        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+    end
+end)
+
+-- 🥚 Auto-Grab
+utility.autoGrabEnabled = false
+
+ui.autoGrabToggle.btn.MouseButton1Click:Connect(function()
+    utility.autoGrabEnabled = not utility.autoGrabEnabled
+    setToggle(ui.autoGrabToggle, utility.autoGrabEnabled)
+    
+    if utility.autoGrabEnabled then
+        local ok = utility:startAutoGrab()
+        if ok then
+            ui.Status.Text = "Status: 🥚 Auto-Grab ON"
+            ui.Status.TextColor3 = COLORS.GREEN
+        else
+            ui.Status.Text = "Status: ❌ Auto-Grab failed"
+            ui.Status.TextColor3 = COLORS.RED
+            utility.autoGrabEnabled = false
+            setToggle(ui.autoGrabToggle, false)
+        end
+    else
+        utility:stopAutoGrab()
+        ui.Status.Text = "Status: 🥚 Auto-Grab OFF"
+        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+    end
+end)
+
+-- 🪤 Anti-Trap (NEW!)
+utility.antiTrapEnabled = false
+
+ui.antiTrapToggle.btn.MouseButton1Click:Connect(function()
+    utility.antiTrapEnabled = not utility.antiTrapEnabled
+    setToggle(ui.antiTrapToggle, utility.antiTrapEnabled)
+    
+    if utility.antiTrapEnabled then
+        local ok = utility:startAntiTrap()
+        if ok then
+            ui.Status.Text = "Status: 🪤 Anti-Trap ON"
+            ui.Status.TextColor3 = COLORS.GREEN
+        else
+            ui.Status.Text = "Status: ❌ Anti-Trap failed"
+            ui.Status.TextColor3 = COLORS.RED
+            utility.antiTrapEnabled = false
+            setToggle(ui.antiTrapToggle, false)
+        end
+    else
+        utility:stopAntiTrap()
+        ui.Status.Text = "Status: 🪤 Anti-Trap OFF"
+        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+    end
+end)
+
+-- Close
 ui.CloseBtn.MouseButton1Click:Connect(function()
-    running = false
+    utility.speedEnabled = false
+    utility.pickupEnabled = false
+    utility.antiRagdollEnabled = false
+    utility.autoGrabEnabled = false
+    utility.antiTrapEnabled = false
+    if utility.speedConn then utility.speedConn:Disconnect() end
+    utility:stopInstantPickup()
+    utility:stopAntiRagdoll()
+    utility:stopAutoGrab()
+    utility:stopAntiTrap()
     ui.ScreenGui:Destroy()
 end)
 
