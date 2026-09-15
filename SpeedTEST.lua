@@ -13,6 +13,7 @@ local utility = {
     Players = game:GetService("Players"),
     ProximityPromptService = game:GetService("ProximityPromptService"),
     ReplicatedStorage = game:GetService("ReplicatedStorage"),
+    Workspace = game:GetService("Workspace"),
     CoreGui = game:GetService("CoreGui"),
     conns = {},
 }
@@ -22,6 +23,8 @@ local utility = {
 -- ============================================
 getgenv().config = {
     speedValue = 260,
+    autoGrabRadius = 30,
+    positionFallbackRadius = 15,   -- Fallback kung hindi mahanap yung uid
 }
 
 -- ============================================
@@ -145,7 +148,128 @@ function utility:stopAntiRagdoll()
 end
 
 -- ============================================
--- STEP 7: UI
+-- STEP 7: AUTO-GRAB DROPPED EGG (yours only)
+-- ============================================
+utility.autoGrabEnabled = false
+utility.autoGrabConn = nil
+utility.lastEggUid = nil
+utility.lastEggPos = nil
+utility.grabCooldown = 0
+
+function utility:getCurrentEggUid()
+    local char = self.LocalPlayer.Character
+    if not char then return nil end
+    for _, tool in next, char:GetChildren() do
+        if tool:IsA("Tool") and tool:GetAttribute("ItemType") == "AssetEgg" then
+            return tool:GetAttribute("UID") or tool:GetAttribute("Uid")
+        end
+    end
+    return nil
+end
+
+function utility:startAutoGrab()
+    self.LocalPlayer = self.Players.LocalPlayer
+    if not self.LocalPlayer then return false, "No LocalPlayer" end
+    if not fireproximityprompt then return false, "Missing fireproximityprompt" end
+
+    utility.lastEggUid = nil
+    utility.lastEggPos = nil
+    utility.grabCooldown = 0
+
+    utility.autoGrabConn = self.RunService.Heartbeat:Connect(function()
+        if not utility.autoGrabEnabled then return end
+
+        local now = tick()
+        if now < utility.grabCooldown then return end
+
+        local char = self.LocalPlayer.Character
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        -- 🎯 Check kung may egg sa character
+        local currentUid = utility:getCurrentEggUid()
+
+        if currentUid then
+            -- ✅ May egg — i-save yung uid at position
+            utility.lastEggUid = currentUid
+            utility.lastEggPos = hrp.Position
+            return
+        end
+
+        -- ❌ Wala nang egg — baka na-drop!
+        if not utility.lastEggUid then return end
+
+        -- 🔍 Hanapin yung DROPPED egg
+        local myPos = hrp.Position
+        local closestPrompt = nil
+        local closestDist = getgenv().config.autoGrabRadius
+
+        for _, obj in next, self.Workspace:GetDescendants() do
+            if obj:IsA("BasePart") and obj.Name:lower():find("egg") then
+                local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt")
+                if not prompt and obj.Parent then
+                    prompt = obj.Parent:FindFirstChildWhichIsA("ProximityPrompt")
+                    if not prompt and obj.Parent.Parent then
+                        prompt = obj.Parent.Parent:FindFirstChildWhichIsA("ProximityPrompt")
+                    end
+                end
+
+                if prompt then
+                    -- 🎯 Try UID matching
+                    local eggUid = obj:GetAttribute("UID") 
+                        or obj:GetAttribute("Uid")
+                        or (obj.Parent and (obj.Parent:GetAttribute("UID") or obj.Parent:GetAttribute("Uid")))
+                    
+                    local matchUid = false
+                    if eggUid and utility.lastEggUid then
+                        matchUid = tostring(eggUid) == tostring(utility.lastEggUid)
+                    end
+
+                    -- 🎯 Fallback: position-based matching
+                    local matchPos = false
+                    if utility.lastEggPos then
+                        local distFromDrop = (obj.Position - utility.lastEggPos).Magnitude
+                        matchPos = distFromDrop <= getgenv().config.positionFallbackRadius
+                    end
+
+                    if matchUid or matchPos then
+                        local dist = (obj.Position - myPos).Magnitude
+                        if dist < closestDist then
+                            closestDist = dist
+                            closestPrompt = prompt
+                        end
+                    end
+                end
+            end
+        end
+
+        -- ⚡ Auto-grab yung dropped egg mo lang
+        if closestPrompt then
+            pcall(function()
+                closestPrompt.HoldDuration = 0
+                fireproximityprompt(closestPrompt, 0)
+            end)
+            print("[AutoGrab] ✅ Grabbed YOUR dropped egg at " .. math.floor(closestDist) .. " studs")
+            utility.grabCooldown = tick() + 0.5
+        end
+    end)
+
+    return true
+end
+
+function utility:stopAutoGrab()
+    if utility.autoGrabConn then
+        utility.autoGrabConn:Disconnect()
+        utility.autoGrabConn = nil
+    end
+    utility.lastEggUid = nil
+    utility.lastEggPos = nil
+    utility.grabCooldown = 0
+end
+
+-- ============================================
+-- STEP 8: UI
 -- ============================================
 local COLORS = {
     BG = Color3.fromRGB(25, 25, 30),
@@ -169,8 +293,8 @@ local function createUI()
     ScreenGui.Parent = utility.CoreGui
 
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 260, 0, 220)
-    Main.Position = UDim2.new(0.5, -130, 0.5, -110)
+    Main.Size = UDim2.new(0, 260, 0, 265)
+    Main.Position = UDim2.new(0.5, -130, 0.5, -132)
     Main.BackgroundColor3 = COLORS.BG
     Main.BorderSizePixel = 0
     Main.Active = true
@@ -264,10 +388,11 @@ local function createUI()
     local speedToggle = makeToggle(50, "Speed Bypass", "⚡")
     local pickupToggle = makeToggle(95, "Instant Pickup", "⚡")
     local ragdollToggle = makeToggle(140, "Anti-Ragdoll", "🛡️")
+    local autoGrabToggle = makeToggle(185, "Auto-Grab My Drop", "🥚")
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 20)
-    Status.Position = UDim2.new(0, 15, 0, 185)
+    Status.Position = UDim2.new(0, 15, 0, 230)
     Status.BackgroundTransparency = 1
     Status.Text = "Status: Ready"
     Status.TextColor3 = Color3.fromRGB(255, 200, 0)
@@ -278,13 +403,13 @@ local function createUI()
     return {
         ScreenGui = ScreenGui, Main = Main,
         speedToggle = speedToggle, pickupToggle = pickupToggle,
-        ragdollToggle = ragdollToggle,
+        ragdollToggle = ragdollToggle, autoGrabToggle = autoGrabToggle,
         Status = Status, CloseBtn = CloseBtn
     }
 end
 
 -- ============================================
--- STEP 8: STATE + WIRING
+-- STEP 9: STATE + WIRING
 -- ============================================
 local ui = createUI()
 
@@ -381,19 +506,47 @@ ui.ragdollToggle.btn.MouseButton1Click:Connect(function()
     end
 end)
 
+-- 🥚 Auto-Grab MY Dropped Egg
+utility.autoGrabEnabled = false
+
+ui.autoGrabToggle.btn.MouseButton1Click:Connect(function()
+    utility.autoGrabEnabled = not utility.autoGrabEnabled
+    setToggle(ui.autoGrabToggle, utility.autoGrabEnabled)
+    
+    if utility.autoGrabEnabled then
+        local ok, err = utility:startAutoGrab()
+        if ok then
+            ui.Status.Text = "Status: 🥚 Auto-Grab ON"
+            ui.Status.TextColor3 = COLORS.GREEN
+        else
+            ui.Status.Text = "Status: ❌ Auto-Grab failed"
+            ui.Status.TextColor3 = COLORS.RED
+            utility.autoGrabEnabled = false
+            setToggle(ui.autoGrabToggle, false)
+            warn("Auto-Grab: " .. tostring(err))
+        end
+    else
+        utility:stopAutoGrab()
+        ui.Status.Text = "Status: 🥚 Auto-Grab OFF"
+        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+    end
+end)
+
 -- Close
 ui.CloseBtn.MouseButton1Click:Connect(function()
     utility.speedEnabled = false
     utility.pickupEnabled = false
     utility.antiRagdollEnabled = false
+    utility.autoGrabEnabled = false
     if utility.speedConn then utility.speedConn:Disconnect() end
     utility:stopInstantPickup()
     utility:stopAntiRagdoll()
+    utility:stopAutoGrab()
     ui.ScreenGui:Destroy()
 end)
 
 -- ============================================
--- STEP 9: INIT
+-- STEP 10: INIT
 -- ============================================
 ui.Status.Text = "Status: ✅ Ready"
 ui.Status.TextColor3 = COLORS.GREEN
