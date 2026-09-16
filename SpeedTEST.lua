@@ -1,6 +1,6 @@
 -- ============================================================
--- AUTO GRAB BEST EGG ONLY
--- Walang tween, walang TP — instant grab lang
+-- AUTO GRAB BEST EGG — FAST VERSION
+-- Instant grab, no tween, no TP
 -- ============================================================
 
 local Players           = game:GetService("Players")
@@ -12,8 +12,11 @@ local LocalPlayer       = Players.LocalPlayer
 -- ============ STATE ============
 local State = {
     running    = false,
-    minArea    = 10,       -- best egg area (Cherry Blossom pataas)
-    grabDelay  = 0.1,      -- delay between checks
+    minArea    = 10,
+    checkDelay = 0.05,      -- ⚡ 6x faster (from 0.3)
+    grabCooldown = 1,       -- ⚡ 1s lang (from 5)
+    postGrabWait = 0.1,     -- ⚡ 0.1s lang (from 0.5)
+    multiGrab = true,       -- ⚡ Grab lahat ng best sa isang pass
 }
 
 local AREA_NAMES = {
@@ -57,14 +60,13 @@ local function getEggPos(rec)
     return nil
 end
 
--- ============ FIND BEST EGG ============
-local function findBestEgg()
-    if not EggState then return nil end
+-- ============ FIND ALL BEST EGGS (multi) ============
+local function findAllBestEggs()
+    if not EggState then return {} end
     local ok, fieldEggs = pcall(function() return EggState.ReadFieldEggs() end)
-    if not ok or not fieldEggs or not fieldEggs.Records then return nil end
+    if not ok or not fieldEggs or not fieldEggs.Records then return {} end
 
-    local bestRec = nil
-    local bestScore = -1
+    local eggs = {}
 
     for _, rec in ipairs(fieldEggs.Records) do
         if rec.State == "Slot" or rec.State == "Dropped" then
@@ -77,39 +79,37 @@ local function findBestEgg()
                 local rarityNum = getRarityNumber(rec)
                 local scale = getAssetScale(rec)
                 local score = (rarityNum * 1000) + scale
-
-                if score > bestScore then
-                    bestScore = score
-                    bestRec = rec
-                end
+                eggs[#eggs + 1] = { rec = rec, score = score }
             end
         end
     end
-    return bestRec
+
+    -- Sort highest score first
+    table.sort(eggs, function(a, b) return a.score > b.score end)
+    return eggs
 end
 
--- ============ AUTO GRAB (no tween, instant lang) ============
-local function autoGrabEgg(rec)
+-- ============ FAST GRAB ============
+local function fastGrabEgg(rec)
     if not rec then return false end
 
-    warn(("[GRAB] Best egg nahanap: %s (%s)"):format(rec.Uid, rec.AreaId))
-
-    -- 1. Try instant carry
+    -- 1. INSTANT CARRY (fastest)
     local ok1, res1 = pcall(function()
         return EggState.CarryFieldEgg(rec.Uid)
     end)
     if ok1 and res1 == true then
-        warn("[GRAB] ✅ Na-grab via CarryFieldEgg")
-        return true
+        return true, "instant"
     end
 
-    -- 2. Fallback: proximity prompt
+    -- 2. PROMPT FALLBACK
     local eggPos = getEggPos(rec)
+    if not eggPos then return false, "no pos" end
+
     local CarryAreaEggs = Workspace:QueryDescendants("#CarryAreaEgg")
     local closetprompt, closetdist = nil, math.huge
     for _, prompt in next, CarryAreaEggs do
         local p = prompt.Parent
-        if p and eggPos then
+        if p then
             local dist = (eggPos - p.Position).Magnitude
             if dist < closetdist then
                 closetdist = dist
@@ -123,46 +123,66 @@ local function autoGrabEgg(rec)
             closetprompt.HoldDuration = 0
             fireproximityprompt(closetprompt, 0)
         end)
-        warn("[GRAB] ✅ Na-grab via prompt")
-        return true
+        return true, "prompt"
     end
 
-    warn("[GRAB] ❌ Failed")
-    return false
+    return false, "no prompt"
 end
 
--- ============ MAIN LOOP ============
+-- ============ MAIN LOOP (FAST) ============
 local function mainLoop()
     State.running = true
-    warn("=== AUTO GRAB START ===")
+    warn("=== FAST AUTO GRAB START ===")
 
     local lastGrabbed = {}
-    local checkDelay = 0.3
+    local grabCount = 0
 
     while State.running do
-        task.wait(checkDelay)
+        task.wait(State.checkDelay)
 
         if not State.running then break end
 
         if not loadModules() then
-            warn("[GRAB] Waiting for EggState...")
-            task.wait(1)
+            task.wait(0.5)
             continue
         end
 
-        local best = findBestEgg()
-        if best then
-            -- Check kung bagong egg (hindi pa na-grab)
-            local lastTime = lastGrabbed[best.Uid]
-            if not lastTime or (tick() - lastTime) > 5 then
-                lastGrabbed[best.Uid] = tick()
-                autoGrabEgg(best)
-                task.wait(0.5)
+        local bestEggs = findAllBestEggs()
+        if #bestEggs > 0 then
+            -- Kunin lahat ng best eggs (kung multiGrab) o pinaka-best lang
+            local toGrab = State.multiGrab and bestEggs or { bestEggs[1] }
+
+            for _, item in ipairs(toGrab) do
+                if not State.running then break end
+
+                local rec = item.rec
+                local lastTime = lastGrabbed[rec.Uid]
+
+                if not lastTime or (tick() - lastTime) > State.grabCooldown then
+                    lastGrabbed[rec.Uid] = tick()
+
+                    local ok, method = fastGrabEgg(rec)
+                    if ok then
+                        grabCount = grabCount + 1
+                        warn(("[GRAB #%d] ✅ %s (%s) via %s"):format(
+                            grabCount, rec.Uid, rec.AreaId, method))
+                    end
+
+                    task.wait(State.postGrabWait)
+                end
+            end
+        end
+
+        -- Cleanup old entries every 10s
+        if grabCount % 100 == 0 then
+            local now = tick()
+            for uid, t in pairs(lastGrabbed) do
+                if now - t > 30 then lastGrabbed[uid] = nil end
             end
         end
     end
 
-    warn("=== AUTO GRAB STOP ===")
+    warn("=== FAST AUTO GRAB STOP ===")
 end
 
 -- ============ UI ============
@@ -176,6 +196,7 @@ local COLORS = {
     KNOB = Color3.fromRGB(255, 255, 255),
     TRACK_OFF = Color3.fromRGB(70, 70, 80),
     YELLOW = Color3.fromRGB(255, 200, 0),
+    CYAN = Color3.fromRGB(80, 200, 255),
 }
 
 local function createUI()
@@ -217,8 +238,8 @@ local function createUI()
     Title.Size = UDim2.new(1, -50, 1, 0)
     Title.Position = UDim2.new(0, 12, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "🎯 Auto Grab Best Egg"
-    Title.TextColor3 = COLORS.TEXT
+    Title.Text = "⚡ Auto Grab Best Egg"
+    Title.TextColor3 = COLORS.CYAN
     Title.TextSize = 13
     Title.Font = Enum.Font.GothamBold
     Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -238,7 +259,7 @@ local function createUI()
     lbl.Size = UDim2.new(1, -120, 0, 25)
     lbl.Position = UDim2.new(0, 15, 0, 55)
     lbl.BackgroundTransparency = 1
-    lbl.Text = "🎯 Auto Grab"
+    lbl.Text = "⚡ Fast Auto Grab"
     lbl.TextColor3 = COLORS.TEXT
     lbl.TextSize = 14
     lbl.Font = Enum.Font.GothamBold
@@ -309,8 +330,8 @@ ui.btn.MouseButton1Click:Connect(function()
             return
         end
         setToggle(true)
-        ui.Status.Text = "Status: 🎯 Monitoring..."
-        ui.Status.TextColor3 = COLORS.GREEN
+        ui.Status.Text = "Status: ⚡ FAST Monitoring..."
+        ui.Status.TextColor3 = COLORS.CYAN
         task.spawn(mainLoop)
     else
         State.running = false
@@ -329,7 +350,7 @@ end)
 task.spawn(function()
     task.wait(0.5)
     if loadModules() then
-        ui.Status.Text = "Status: ✅ Ready"
+        ui.Status.Text = "Status: ✅ Ready (fast mode)"
         ui.Status.TextColor3 = COLORS.GREEN
     else
         ui.Status.Text = "Status: ⚠️ Waiting for game..."
