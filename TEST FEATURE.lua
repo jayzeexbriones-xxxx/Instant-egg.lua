@@ -1,6 +1,5 @@
 -- ============================================================
--- CHICKEN RAGDOLL → TP AGAD → STAY
--- Fix: Faster check + Backup detection
+-- CHICKEN RAGDOLL → TP AGAD → STAY (FIXED)
 -- ============================================================
 
 local Players           = game:GetService("Players")
@@ -104,6 +103,23 @@ local function getEggPos(rec)
     if not rec then return nil end
     if rec.BoundsCFrame and rec.BoundsCFrame.Position then
         return rec.BoundsCFrame.Position
+    end
+    return nil
+end
+
+-- ============ 🎯 GET AREA CENTER (MOVED UP!) ============
+local function getAreaCenter(areaName)
+    local ok, area = pcall(function()
+        return Workspace.__OBJECTS.Areas.GuardAreas[areaName]
+    end)
+    if ok and area then
+        local bounds = area:FindFirstChild("Bounds")
+        if bounds and bounds:IsA("BasePart") then
+            return bounds.Position
+        end
+        if area.PrimaryPart then
+            return area.PrimaryPart.Position
+        end
     end
     return nil
 end
@@ -243,39 +259,36 @@ local function grabEgg(rec)
     return false, "no prompt"
 end
 
--- ============ RAGDOLL CHECK (FIXED - 3 LAYERS) ============
+-- ============ RAGDOLL CHECK ============
 local function isRagdolled()
-    -- Layer 1: RagdollEndTime attribute (server signal)
     local t = LocalPlayer:GetAttribute("RagdollEndTime")
     if type(t) == "number" and t > workspace:GetServerTimeNow() then
         return true, "RagdollEndTime"
     end
 
-    -- Layer 2: PlatformStand
     local hum = getHum()
     if hum and hum.PlatformStand then
         return true, "PlatformStand"
     end
 
-    -- Layer 3: Humanoid state (Physics/Ragdoll/FallingDown)
     if hum then
         local st = hum:GetState()
         if st == Enum.HumanoidStateType.Physics 
            or st == Enum.HumanoidStateType.Ragdoll
            or st == Enum.HumanoidStateType.FallingDown then
-            return true, "State=" .. tostring(st)
+            return true, "State"
         end
     end
 
     return false, nil
 end
 
--- ============ WAIT FOR RAGDOLL + TP AGAD ============
+-- ============ WAIT FOR RAGDOLL + TP ============
 local function waitForRagdollAndTP(bestRec, bestValue, timeout)
-    warn("[CHICKEN] Hinihintay ma-ragdoll (fast check 0.01s)...")
+    warn("[CHICKEN] Hinihintay ma-ragdoll...")
     local t0 = os.clock()
 
-    -- Kunin yung area position
+    -- ✅ getAreaCenter naka-declare na sa itaas
     local areaPos = getAreaCenter(bestRec.AreaId) or getEggPos(bestRec)
     if not areaPos then
         warn("[CHICKEN] Walang area position!")
@@ -285,26 +298,21 @@ local function waitForRagdollAndTP(bestRec, bestValue, timeout)
     State.targetArea = bestRec.AreaId
     State.targetPos = areaPos
 
-    warn(("[CHICKEN] Target area: %s (%.0f, %.0f, %.0f)"):format(
+    warn(("[CHICKEN] Target: %s (%.0f, %.0f, %.0f)"):format(
         bestRec.AreaId, areaPos.X, areaPos.Y, areaPos.Z))
 
-    local checkCount = 0
     while os.clock() - t0 < timeout do
         if not State.running then return false end
 
         local ragdolled, signal = isRagdolled()
-        checkCount = checkCount + 1
 
         if ragdolled then
-            warn(("[CHICKEN] ✅ Na-ragdoll! (signal=%s, check #%d)"):format(
-                tostring(signal), checkCount))
-
-            -- 🎯 TP AGAD habang naka-ragdoll
+            warn(("[CHICKEN] ✅ Na-ragdoll! (signal=%s)"):format(tostring(signal)))
             warn(("[CHICKEN] TP AGAD sa %s!"):format(bestRec.AreaId))
-            tpTo(areaPos)
-            warn("[CHICKEN] TP executed!")
 
-            -- Hintayin matapos yung ragdoll
+            tpTo(areaPos)
+
+            -- Hintayin matapos
             local rdStart = os.clock()
             while isRagdolled() and (os.clock() - rdStart) < 5 do
                 if not State.running then return false end
@@ -315,15 +323,14 @@ local function waitForRagdollAndTP(bestRec, bestValue, timeout)
             return true
         end
 
-        task.wait(0.01)   -- 🎯 Sobrang bilis check
+        task.wait(0.01)
     end
 
-    warn(("[CHICKEN] ⏱ Timeout (%.0fs) - walang ragdoll, checked %d times"):format(
-        timeout, checkCount))
+    warn("[CHICKEN] ⏱ Timeout")
     return false
 end
 
--- ============ FORMAT NUMBER ============
+-- ============ FORMAT ============
 local function formatNumber(n)
     n = tonumber(n) or 0
     local units = {{1e12,"T"},{1e9,"B"},{1e6,"M"},{1e3,"K"}}
@@ -334,23 +341,6 @@ local function formatNumber(n)
         end
     end
     return tostring(math.round(n))
-end
-
--- ============ GET AREA CENTER ============
-local function getAreaCenter(areaName)
-    local ok, area = pcall(function()
-        return Workspace.__OBJECTS.Areas.GuardAreas[areaName]
-    end)
-    if ok and area then
-        local bounds = area:FindFirstChild("Bounds")
-        if bounds and bounds:IsA("BasePart") then
-            return bounds.Position
-        end
-        if area.PrimaryPart then
-            return area.PrimaryPart.Position
-        end
-    end
-    return nil
 end
 
 -- ============ HOLD ============
@@ -440,34 +430,30 @@ local function mainFlow()
     warn("[FLOW] STEP 4: Hanapin best egg...")
     local best, bestValue = findBestEgg()
     if not best then
-        warn("[FLOW] Walang best egg (≥ 10M)!")
+        warn("[FLOW] Walang best egg!")
         State.running = false
-        ui.Status2.Text = "❌ Walang egg ≥ 10M"
-        ui.Status2.TextColor3 = COLORS.RED
         return
     end
 
     warn(("[FLOW] Best: %s /s (%s)"):format(
         formatNumber(bestValue), best.AreaId))
 
-    -- STEP 5: Wait for ragdoll + TP AGAD
+    -- STEP 5: Wait ragdoll + TP
     warn("[FLOW] STEP 5: Hintayin ma-ragdoll AT TP AGAD...")
     local success = waitForRagdollAndTP(best, bestValue, State.ragdollWait)
 
     if not success then
-        warn("[FLOW] Walang ragdoll - hindi nag-TP")
-        ui.Status2.Text = "⚠️ Walang ragdoll"
-        ui.Status2.TextColor3 = COLORS.YELLOW
+        warn("[FLOW] Walang ragdoll")
         State.running = false
         return
     end
 
-    -- STEP 6: Start hold
+    -- STEP 6: Hold
     task.wait(0.5)
     startHold()
-    warn("[HOLD] Hold started (every 0.5s)")
+    warn("[HOLD] Hold started")
 
-    warn(("=== TAPOS — NASA %s AREA NA, HOLDING ==="):format(best.AreaId))
+    warn(("=== TAPOS — NASA %s AREA NA ==="):format(best.AreaId))
     ui.Status2.Text = ("✅ %s — HOLDING"):format(best.AreaId)
     ui.Status2.TextColor3 = COLORS.GREEN
 end
