@@ -885,6 +885,7 @@ local function createUI()
     ScreenGui.Parent = utility.CoreGui
 
     -- 🎯 COMPACT: 220 x 340 (kasama potato)
-    local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 220, 0, 340)
-    Main.P
+local Main = Instance.new("Frame")
+Main.Size = UDim2.new(0, 220, 0, 340)
+Main.Position = UDim2.new(0.5, -110, 0.5, -170)  -- ← DAPAT MAY GANITO
+Main.BackgroundColor3 = COLORS.BG  -- ← NAPUTOL DITO
