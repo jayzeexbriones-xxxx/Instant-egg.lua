@@ -27,7 +27,7 @@ end
 
 -- ============ CONFIG ============
 getgenv().config = {
-    spawnCF = CFrame.new(514, 71, -368),  -- Forest spawn / bypass point
+    spawnCF = CFrame.new(514, 71, -368),
     chickenArea = "Forest",
     minarea = 10,
     tpSpeed = 430,
@@ -43,21 +43,12 @@ local utility = {
 }
 
 utility.areas = {
-    "Forest",         -- 1
-    "Lake",           -- 2
-    "Desert",         -- 3
-    "Jungle",         -- 4
-    "Snow",           -- 5
-    "Volcano",        -- 6
-    "Abyss Ocean",    -- 7
-    "Prehistoric",    -- 8
-    "Cosmic",         -- 9
-    "Cherry Blossom", -- 10
-    "Titan Temple",   -- 11
-    "Light Dark",     -- 12
+    "Forest", "Lake", "Desert", "Jungle", "Snow",
+    "Volcano", "Abyss Ocean", "Prehistoric", "Cosmic",
+    "Cherry Blossom", "Titan Temple", "Light Dark",
 }
 
--- ============ GET CHICKEN EGG (any sa Forest) ============
+-- ============ GET CHICKEN EGG ============
 function utility:getChickenEgg()
     local s, r = pcall(function()
         for _, data in next, self.EggState.ReadFieldEggs().Records do
@@ -136,7 +127,6 @@ end
 function utility:waitForHatch(uid)
     local maxWait = getgenv().config.hatchWait
     local t0 = os.clock()
-
     warn("[AUTO] Hinihintay ma-tuka...")
     repeat
         if not self.running then return false end
@@ -157,7 +147,6 @@ function utility:waitForHatch(uid)
             return true
         end
     until (os.clock() - t0) > maxWait
-
     warn("[AUTO] Hatch timeout")
     return false
 end
@@ -166,33 +155,38 @@ end
 function utility:init()
     self.LocalPlayer = self.Players.LocalPlayer
     if not fireproximityprompt then
-        self.LocalPlayer:Kick("Unsupported executor: missing fireproximityprompt")
+        warn("[AUTO] ERROR: fireproximityprompt missing!")
         return false
     end
     self.Client = self.ReplicatedStorage:FindFirstChild("Client")
-    if not self.Client then warn("failed to get Client") return false end
+    if not self.Client then
+        warn("[AUTO] ERROR: Client not found!")
+        return false
+    end
     self.EggState = require(self.Client:FindFirstChild("EggState"))
-    if not self.EggState then warn("failed to get EggState") return false end
+    if not self.EggState then
+        warn("[AUTO] ERROR: EggState not found!")
+        return false
+    end
+    warn("[AUTO] Init OK!")
     return true
 end
 
 -- ============ MAIN FLOW ============
--- Spawn → Chicken Egg → Wait Hatch → Best Egg → Stay
 function utility:run()
     if not utility.EggState then
         if not self:init() then return end
     end
     self.running = true
-
     warn("=== AUTO START ===")
 
-    -- ========== STEP 1: TP sa Spawn ==========
+    -- STEP 1: Spawn
     warn("[AUTO] TP sa spawn...")
     self:GoTo({["BoundsCFrame"] = getgenv().config.spawnCF})
     if not self.running then return end
     task.wait(0.3)
 
-    -- ========== STEP 2: Chicken Egg ==========
+    -- STEP 2: Chicken Egg
     warn("[AUTO] Hinahanap chicken egg sa Forest...")
     local chicken = self:getChickenEgg()
     if not chicken then
@@ -200,9 +194,9 @@ function utility:run()
         self.running = false
         return
     end
+    warn("[AUTO] Chicken egg nahanap! Uid: " .. tostring(chicken.Uid))
     local chickenUid = chicken.Uid
 
-    warn("[AUTO] TP sa chicken egg...")
     self:GoTo(chicken)
     if not self.running then return end
     task.wait(0.5)
@@ -212,14 +206,14 @@ function utility:run()
         fireproximityprompt(p)
         warn("[AUTO] Na-grab chicken egg")
     else
-        warn("[AUTO] Walang prompt para sa chicken egg")
+        warn("[AUTO] Walang prompt!")
     end
 
-    -- ========== STEP 3: Wait Hatch ==========
+    -- STEP 3: Wait Hatch
     self:waitForHatch(chickenUid)
     if not self.running then return end
 
-    -- ========== STEP 4: Best Egg ==========
+    -- STEP 4: Best Egg
     warn("[AUTO] Hinahanap best egg...")
     local best = self:getBestEgg()
     if not best then
@@ -229,7 +223,6 @@ function utility:run()
     end
     warn(("[AUTO] Best Egg: %s (%s)"):format(best.Uid, best.AreaId))
 
-    warn("[AUTO] TP sa best egg...")
     self:GoTo(best)
     if not self.running then return end
     task.wait(0.5)
@@ -240,7 +233,7 @@ function utility:run()
         warn("[AUTO] Na-steal best egg")
     end
 
-    -- ========== STEP 5: STAY ==========
+    -- STEP 5: STAY
     warn("=== TAPOS — STAY SA BEST EGG AREA ===")
     self.running = false
 end
@@ -289,7 +282,12 @@ MainTab:CreateParagraph({
 MainTab:CreateButton({
     name = "Refresh Eggs",
     callback = function()
-        if not utility.EggState then utility:init() end
+        if not utility.EggState then
+            if not utility:init() then
+                warn("[REFRESH] Init failed!")
+                return
+            end
+        end
         local chicken = utility:getChickenEgg()
         local best = utility:getBestEgg()
         if chicken then
@@ -304,3 +302,11 @@ MainTab:CreateButton({
         end
     end,
 })
+
+-- ============ AUTO INIT ON LOAD ============
+-- Para pag-execute mo, ready na agad
+task.spawn(function()
+    task.wait(1)
+    warn("[AUTO] Initializing...")
+    utility:init()
+end)
