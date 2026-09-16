@@ -884,8 +884,349 @@ local function createUI()
     ScreenGui.ResetOnSpawn = false
     ScreenGui.Parent = utility.CoreGui
 
-    -- 🎯 COMPACT: 220 x 340 (kasama potato)
-local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 220, 0, 340)
-Main.Position = UDim2.new(0.5, -110, 0.5, -170)  -- ← DAPAT MAY GANITO
-Main.BackgroundColor3 = COLORS.BG  -- ← NAPUTOL DITO
+    -    -- 🎯 COMPACT: 220 x 340 (kasama potato)
+    local Main = Instance.new("Frame")
+    Main.Size = UDim2.new(0, 220, 0, 340)
+    Main.Position = UDim2.new(0.5, -110, 0.5, -170)
+    Main.BackgroundColor3 = COLORS.BG
+    Main.BorderSizePixel = 0
+    Main.Active = true
+    Main.Draggable = true
+    Main.Parent = ScreenGui
+
+    local c1 = Instance.new("UICorner", Main)
+    c1.CornerRadius = UDim.new(0, 8)
+    local s1 = Instance.new("UIStroke", Main)
+    s1.Color = COLORS.STROKE
+
+    -- Title bar
+    local TitleBar = Instance.new("Frame", Main)
+    TitleBar.Size = UDim2.new(1, 0, 0, 28)
+    TitleBar.BackgroundColor3 = COLORS.TITLE_BG
+    TitleBar.BorderSizePixel = 0
+    local c2 = Instance.new("UICorner", TitleBar)
+    c2.CornerRadius = UDim.new(0, 8)
+    local TitleCover = Instance.new("Frame", TitleBar)
+    TitleCover.Size = UDim2.new(1, 0, 0, 8)
+    TitleCover.Position = UDim2.new(0, 0, 1, -8)
+    TitleCover.BackgroundColor3 = COLORS.TITLE_BG
+    TitleCover.BorderSizePixel = 0
+
+    local Title = Instance.new("TextLabel", TitleBar)
+    Title.Size = UDim2.new(1, -40, 1, 0)
+    Title.Position = UDim2.new(0, 10, 0, 0)
+    Title.BackgroundTransparency = 1
+    Title.Text = "🥚 Steal An Egg"
+    Title.TextColor3 = COLORS.TEXT
+    Title.TextSize = 12
+    Title.Font = Enum.Font.GothamBold
+    Title.TextXAlignment = Enum.TextXAlignment.Left
+
+    local CloseBtn = Instance.new("TextButton", TitleBar)
+    CloseBtn.Size = UDim2.new(0, 20, 0, 20)
+    CloseBtn.Position = UDim2.new(1, -25, 0, 4)
+    CloseBtn.BackgroundColor3 = COLORS.RED
+    CloseBtn.Text = "✕"
+    CloseBtn.TextColor3 = COLORS.TEXT
+    CloseBtn.TextSize = 12
+    CloseBtn.Font = Enum.Font.GothamBold
+    local c3 = Instance.new("UICorner", CloseBtn)
+    c3.CornerRadius = UDim.new(0, 5)
+
+    -- Toggle helper
+    local function makeToggle(y, label, icon)
+        local lbl = Instance.new("TextLabel", Main)
+        lbl.Size = UDim2.new(1, -105, 0, 22)
+        lbl.Position = UDim2.new(0, 12, 0, y)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = icon .. " " .. label
+        lbl.TextColor3 = COLORS.TEXT
+        lbl.TextSize = 11
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+
+        local state = Instance.new("TextLabel", Main)
+        state.Size = UDim2.new(0, 35, 0, 22)
+        state.Position = UDim2.new(1, -100, 0, y)
+        state.BackgroundTransparency = 1
+        state.Text = "OFF"
+        state.TextColor3 = COLORS.RED
+        state.TextSize = 10
+        state.Font = Enum.Font.GothamBold
+        state.TextXAlignment = Enum.TextXAlignment.Right
+
+        local track = Instance.new("Frame", Main)
+        track.Size = UDim2.new(0, 40, 0, 22)
+        track.Position = UDim2.new(1, -55, 0, y)
+        track.BackgroundColor3 = COLORS.TRACK_OFF
+        track.BorderSizePixel = 0
+        local tc = Instance.new("UICorner", track)
+        tc.CornerRadius = UDim.new(1, 0)
+
+        local knob = Instance.new("Frame", track)
+        knob.Size = UDim2.new(0, 16, 0, 16)
+        knob.Position = UDim2.new(0, 3, 0.5, -8)
+        knob.BackgroundColor3 = COLORS.KNOB
+        knob.BorderSizePixel = 0
+        local kc = Instance.new("UICorner", knob)
+        kc.CornerRadius = UDim.new(1, 0)
+
+        local btn = Instance.new("TextButton", Main)
+        btn.Size = UDim2.new(0, 105, 0, 30)
+        btn.Position = UDim2.new(1, -110, 0, y - 4)
+        btn.BackgroundTransparency = 1
+        btn.Text = ""
+
+        return {track = track, knob = knob, state = state, btn = btn}
+    end
+
+    -- 🥔 POTATO toggle (TOP!)
+    local potatoToggle = makeToggle(38, "Potato Graphics", "🥔")
+
+    -- Other toggles
+    local speedToggle = makeToggle(72, "Speed Bypass (300)", "⚡")
+    local pickupToggle = makeToggle(106, "Instant Pickup", "⚡")
+    local ragdollToggle = makeToggle(140, "Anti-Ragdoll", "🛡️")
+    local antiTrapToggle = makeToggle(174, "Anti-Trap", "🪤")
+    local autoGrabToggle = makeToggle(208, "Auto Grab 50M+", "💰")
+
+    -- Auto Grab info
+    local GrabInfo = Instance.new("TextLabel", Main)
+    GrabInfo.Size = UDim2.new(1, -20, 0, 16)
+    GrabInfo.Position = UDim2.new(0, 12, 0, 238)
+    GrabInfo.BackgroundTransparency = 1
+    GrabInfo.Text = "Next: -- | Grabbed: 0"
+    GrabInfo.TextColor3 = COLORS.GOLD
+    GrabInfo.TextSize = 9
+    GrabInfo.Font = Enum.Font.Gotham
+    GrabInfo.TextXAlignment = Enum.TextXAlignment.Left
+
+    -- Status
+    local Status = Instance.new("TextLabel", Main)
+    Status.Size = UDim2.new(1, -20, 0, 16)
+    Status.Position = UDim2.new(0, 12, 0, 256)
+    Status.BackgroundTransparency = 1
+    Status.Text = "Status: Ready"
+    Status.TextColor3 = COLORS.YELLOW
+    Status.TextSize = 10
+    Status.Font = Enum.Font.Gotham
+    Status.TextXAlignment = Enum.TextXAlignment.Left
+
+    -- Potato Info
+    local PotatoInfo = Instance.new("TextLabel", Main)
+    PotatoInfo.Size = UDim2.new(1, -20, 0, 14)
+    PotatoInfo.Position = UDim2.new(0, 12, 0, 276)
+    PotatoInfo.BackgroundTransparency = 1
+    PotatoInfo.Text = "🥔 Field eggs safe"
+    PotatoInfo.TextColor3 = COLORS.GREEN
+    PotatoInfo.TextSize = 9
+    PotatoInfo.Font = Enum.Font.Gotham
+    PotatoInfo.TextXAlignment = Enum.TextXAlignment.Left
+
+    -- Flow Hint
+    local FlowHint = Instance.new("TextLabel", Main)
+    FlowHint.Size = UDim2.new(1, -20, 0, 14)
+    FlowHint.Position = UDim2.new(0, 12, 0, 294)
+    FlowHint.BackgroundTransparency = 1
+    FlowHint.Text = "💡 1B → 500M → 100M → 50M"
+    FlowHint.TextColor3 = Color3.fromRGB(100, 200, 255)
+    FlowHint.TextSize = 9
+    FlowHint.Font = Enum.Font.Gotham
+    FlowHint.TextXAlignment = Enum.TextXAlignment.Left
+
+    return {
+        ScreenGui = ScreenGui, Main = Main,
+        potatoToggle = potatoToggle,
+        speedToggle = speedToggle, pickupToggle = pickupToggle,
+        ragdollToggle = ragdollToggle, antiTrapToggle = antiTrapToggle,
+        autoGrabToggle = autoGrabToggle,
+        GrabInfo = GrabInfo, Status = Status,
+        CloseBtn = CloseBtn
+    }
+end
+
+local ui = createUI()
+
+local function setToggle(t, on)
+    t.track.BackgroundColor3 = on and COLORS.GREEN or COLORS.TRACK_OFF
+    t.knob.Position = on and UDim2.new(0, 21, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
+    t.state.Text = on and "ON" or "OFF"
+    t.state.TextColor3 = on and COLORS.GREEN or COLORS.RED
+end
+
+-- 🥔 POTATO TOGGLE
+ui.potatoToggle.btn.MouseButton1Click:Connect(function()
+    if not PotatoGfx.enabled then
+        setToggle(ui.potatoToggle, true)
+        ui.Status.Text = "🥔 Enabling..."
+        ui.Status.TextColor3 = COLORS.YELLOW
+        task.spawn(function()
+            PotatoGfx.enable()
+            task.wait(0.5)
+            ui.Status.Text = "🥔 Potato Graphics ON"
+            ui.Status.TextColor3 = COLORS.GREEN
+        end)
+    else
+        setToggle(ui.potatoToggle, false)
+        ui.Status.Text = "Restoring..."
+        ui.Status.TextColor3 = COLORS.YELLOW
+        task.spawn(function()
+            PotatoGfx.disable()
+            task.wait(0.5)
+            ui.Status.Text = "⚡ Restored to normal"
+            ui.Status.TextColor3 = COLORS.YELLOW
+        end)
+    end
+end)
+
+-- ⚡ Speed Bypass
+utility.speedEnabled = false
+
+ui.speedToggle.btn.MouseButton1Click:Connect(function()
+    utility.speedEnabled = not utility.speedEnabled
+    setToggle(ui.speedToggle, utility.speedEnabled)
+    if utility.speedEnabled then
+        speedBypass.active = true
+        ui.Status.Text = "⚡ Speed ON (300)"
+        ui.Status.TextColor3 = COLORS.GREEN
+    else
+        speedBypass.active = false
+        local char = utility.Players.LocalPlayer.Character
+        if char then
+            local hum = char:FindFirstChild("Humanoid")
+            if hum then hum.WalkSpeed = 16 end
+        end
+        ui.Status.Text = "⚡ Speed OFF"
+        ui.Status.TextColor3 = COLORS.YELLOW
+    end
+end)
+
+-- ⚡ Instant Pickup
+utility.pickupEnabled = false
+
+ui.pickupToggle.btn.MouseButton1Click:Connect(function()
+    utility.pickupEnabled = not utility.pickupEnabled
+    setToggle(ui.pickupToggle, utility.pickupEnabled)
+    if utility.pickupEnabled then
+        local ok = utility:startInstantPickup()
+        if ok then
+            ui.Status.Text = "⚡ Instant Pickup ON"
+            ui.Status.TextColor3 = COLORS.GREEN
+        else
+            ui.Status.Text = "❌ Pickup failed"
+            ui.Status.TextColor3 = COLORS.RED
+            utility.pickupEnabled = false
+            setToggle(ui.pickupToggle, false)
+        end
+    else
+        utility:stopInstantPickup()
+        ui.Status.Text = "⚡ Instant Pickup OFF"
+        ui.Status.TextColor3 = COLORS.YELLOW
+    end
+end)
+
+-- 🛡️ Anti-Ragdoll
+utility.antiRagdollEnabled = false
+
+ui.ragdollToggle.btn.MouseButton1Click:Connect(function()
+    utility.antiRagdollEnabled = not utility.antiRagdollEnabled
+    setToggle(ui.ragdollToggle, utility.antiRagdollEnabled)
+    if utility.antiRagdollEnabled then
+        local ok, err = utility:startAntiRagdoll()
+        if ok then
+            ui.Status.Text = "🛡️ Anti-Ragdoll ON"
+            ui.Status.TextColor3 = COLORS.GREEN
+        else
+            ui.Status.Text = "❌ Anti-Ragdoll failed"
+            ui.Status.TextColor3 = COLORS.RED
+            utility.antiRagdollEnabled = false
+            setToggle(ui.ragdollToggle, false)
+        end
+    else
+        utility:stopAntiRagdoll()
+        ui.Status.Text = "🛡️ Anti-Ragdoll OFF"
+        ui.Status.TextColor3 = COLORS.YELLOW
+    end
+end)
+
+-- 🪤 Anti-Trap
+utility.antiTrapEnabled = false
+
+ui.antiTrapToggle.btn.MouseButton1Click:Connect(function()
+    utility.antiTrapEnabled = not utility.antiTrapEnabled
+    setToggle(ui.antiTrapToggle, utility.antiTrapEnabled)
+    if utility.antiTrapEnabled then
+        local ok = utility:startAntiTrap()
+        if ok then
+            ui.Status.Text = "🪤 Anti-Trap ON"
+            ui.Status.TextColor3 = COLORS.GREEN
+        else
+            ui.Status.Text = "❌ Anti-Trap failed"
+            ui.Status.TextColor3 = COLORS.RED
+            utility.antiTrapEnabled = false
+            setToggle(ui.antiTrapToggle, false)
+        end
+    else
+        utility:stopAntiTrap()
+        ui.Status.Text = "🪤 Anti-Trap OFF"
+        ui.Status.TextColor3 = COLORS.YELLOW
+    end
+end)
+
+-- 💰 Auto Grab
+ui.autoGrabToggle.btn.MouseButton1Click:Connect(function()
+    utility.autoGrabEnabled = not utility.autoGrabEnabled
+    setToggle(ui.autoGrabToggle, utility.autoGrabEnabled)
+    if utility.autoGrabEnabled then
+        local ok, err = utility:startAutoGrab()
+        if ok then
+            ui.Status.Text = "💰 Auto Grab ON"
+            ui.Status.TextColor3 = COLORS.GREEN
+        else
+            ui.Status.Text = "❌ " .. tostring(err)
+            ui.Status.TextColor3 = COLORS.RED
+            utility.autoGrabEnabled = false
+            setToggle(ui.autoGrabToggle, false)
+        end
+    else
+        utility:stopAutoGrab()
+        ui.Status.Text = "💰 Auto Grab OFF"
+        ui.Status.TextColor3 = COLORS.YELLOW
+    end
+end)
+
+-- Live update para sa GrabInfo
+utility.RunService.Heartbeat:Connect(function()
+    if not utility.autoGrabEnabled then return end
+    local now = tick()
+    if utility.lastGrabInfoUpdate and (now - utility.lastGrabInfoUpdate) < 0.5 then return end
+    utility.lastGrabInfoUpdate = now
+    local eggs = utility:findAllHighValueEggs()
+    if #eggs > 0 then
+        local top = eggs[1]
+        ui.GrabInfo.Text = ("Next: %s | Grabbed: %d"):format(
+            string.format("%.2fM", top.value / 1e6),
+            utility.autoGrabCount or 0)
+    else
+        ui.GrabInfo.Text = ("Next: -- | Grabbed: %d"):format(utility.autoGrabCount or 0)
+    end
+end)
+
+-- Close
+ui.CloseBtn.MouseButton1Click:Connect(function()
+    if PotatoGfx.enabled then PotatoGfx.disable() end
+    utility.speedEnabled = false
+    utility.pickupEnabled = false
+    utility.antiRagdollEnabled = false
+    utility.antiTrapEnabled = false
+    utility.autoGrabEnabled = false
+    speedBypass.active = false
+    utility:stopInstantPickup()
+    utility:stopAntiRagdoll()
+    utility:stopAntiTrap()
+    utility:stopAutoGrab()
+    ui.ScreenGui:Destroy()
+end)
+
+ui.Status.Text = "Status: ✅ Ready"
+ui.Status.TextColor3 = COLORS.GREEN
