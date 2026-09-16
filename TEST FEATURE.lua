@@ -1,6 +1,8 @@
 -- ============================================================
--- CHICKEN RAGDOLL → TP BEST EGG AREA → CHILL HOLD
--- Chill hold - hindi nag-spam, hindi namamatay
+-- CHICKEN RAGDOLL → TP AGAD (habang naka-ragdoll) → STAY
+-- KEY CHANGE:
+-- Habang naka-ragdoll, TP AGAD sa best egg area
+-- Hindi hintayin matapos yung ragdoll
 -- ============================================================
 
 local Players           = game:GetService("Players")
@@ -21,6 +23,7 @@ local State = {
     targetArea   = nil,
     targetPos    = nil,
     holdThread   = nil,
+    deathGuard   = nil,
 }
 
 local AREA_NAMES = {
@@ -189,7 +192,6 @@ end
 
 -- ============ TP ============
 local function tpTo(pos)
-    if not isAlive() then return false end
     local char = LocalPlayer.Character
     local hrp = getHRP()
     if not char or not hrp then return false end
@@ -254,28 +256,45 @@ local function isRagdolled()
     return false
 end
 
--- ============ WAIT FOR RAGDOLL ============
-local function waitForRagdoll(timeout)
+-- ============ WAIT FOR RAGDOLL + TP AGAD ============
+-- 🎯 KEY CHANGE: Habang naka-ragdoll, TP AGAD
+local function waitForRagdollAndTP(bestRec, bestValue, timeout)
     warn("[CHICKEN] Hinihintay ma-ragdoll...")
     local t0 = os.clock()
+
+    -- Kunin yung area position
+    local areaPos = getAreaCenter(bestRec.AreaId) or getEggPos(bestRec)
+    if not areaPos then
+        warn("[CHICKEN] Walang area position!")
+        return false
+    end
+
+    State.targetArea = bestRec.AreaId
+    State.targetPos = areaPos
 
     while os.clock() - t0 < timeout do
         if not State.running then return false end
 
         if isRagdolled() then
             local remaining = LocalPlayer:GetAttribute("RagdollEndTime") - workspace:GetServerTimeNow()
-            warn(("[CHICKEN] ✅ Na-ragdoll! (%.2fs remaining)"):format(remaining))
+            warn(("[CHICKEN] ✅ Na-ragdoll! (%.2fs remaining) - TP AGAD!"):format(remaining))
 
+            -- 🎯 TP AGAD habang naka-ragdoll
+            tpTo(areaPos)
+            warn(("[CHICKEN] TP AGAD sa %s (habang naka-ragdoll)"):format(bestRec.AreaId))
+
+            -- Hintayin matapos yung ragdoll
             local rdStart = os.clock()
-            while isRagdolled() and (os.clock() - rdStart) < 3 do
+            while isRagdolled() and (os.clock() - rdStart) < 5 do
                 if not State.running then return false end
                 task.wait(0.1)
             end
-            warn("[CHICKEN] Tapos na ragdoll - TP sa best egg area...")
+
+            warn("[CHICKEN] Tapos na ragdoll")
             return true
         end
 
-        task.wait(0.05)
+        task.wait(0.02)   -- Mabilis check para mahuli yung ragdoll moment
     end
 
     warn("[CHICKEN] ⏱ Timeout - walang ragdoll")
@@ -312,8 +331,40 @@ local function getAreaCenter(areaName)
     return nil
 end
 
--- ============ CHILL HOLD (every 1.5s, hindi spam) ============
-local function startChillHold()
+-- ============ DEATH GUARD ============
+local function startDeathGuard()
+    if State.deathGuard then return end
+
+    State.deathGuard = RunService.Heartbeat:Connect(function()
+        if not State.running then return end
+
+        local char = LocalPlayer.Character
+        local hum = getHum()
+        if not hum then return end
+
+        if hum.Health <= 0 then
+            pcall(function()
+                hum.Health = hum.MaxHealth
+                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end)
+        end
+
+        pcall(function()
+            hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+            hum.BreakJointsOnDeath = false
+        end)
+    end)
+end
+
+local function stopDeathGuard()
+    if State.deathGuard then
+        State.deathGuard:Disconnect()
+        State.deathGuard = nil
+    end
+end
+
+-- ============ ANTI-SNAPBACK HOLD ============
+local function startAntiSnapbackHold()
     if State.holdThread then
         pcall(task.cancel, State.holdThread)
         State.holdThread = nil
@@ -321,15 +372,10 @@ local function startChillHold()
 
     State.holdThread = task.spawn(function()
         while State.running do
-            task.wait(1.5)   -- ⏱ Every 1.5s lang, hindi spam
+            task.wait(0.5)
 
             if not State.running then break end
             if not State.targetPos then break end
-            if not isAlive() then
-                -- Patay - wait for respawn
-                task.wait(1)
-                continue
-            end
 
             local hrp = getHRP()
             if not hrp then
@@ -337,21 +383,24 @@ local function startChillHold()
                 continue
             end
 
+            if not isAlive() then
+                task.wait(1)
+                continue
+            end
+
             local dist = (hrp.Position - State.targetPos).Magnitude
 
-            -- 🎯 Mas mataas threshold: 100 studs
-            if dist > 100 then
-                warn(("[HOLD] Nasa %.0f studs layo - re-TP sa %s"):format(
-                    dist, State.targetArea or "?"))
-                tpTo(State.targetPos)
-            else
-                -- Nasa area pa, keep quiet
+            if dist > 30 then
+                if os.clock() - (State.lastReTP or 0) > 0.3 then
+                    State.lastReTP = os.clock()
+                    tpTo(State.targetPos)
+                end
             end
         end
     end)
 end
 
-local function stopChillHold()
+local function stopAntiSnapbackHold()
     if State.holdThread then
         pcall(task.cancel, State.holdThread)
         State.holdThread = nil
@@ -361,13 +410,15 @@ end
 -- ============ MAIN FLOW ============
 local function mainFlow()
     State.running = true
-    warn("=== CHICKEN RAGDOLL → BEST EGG AREA START ===")
+    warn("=== CHICKEN RAGDOLL → TP AGAD → BEST EGG AREA ===")
 
     if not loadModules() then
         warn("[FLOW] Modules not loaded!")
         State.running = false
         return
     end
+
+    startDeathGuard()
 
     -- STEP 1: TP sa Forest
     warn("[FLOW] STEP 1: TP sa Forest...")
@@ -399,15 +450,8 @@ local function mainFlow()
         task.wait(0.3)
     end
 
-    -- STEP 4: Wait for ragdoll
-    warn("[FLOW] STEP 4: Hintayin ma-ragdoll...")
-    waitForRagdoll(State.ragdollWait)
-
-    task.wait(0.5)
-    if not State.running then return end
-
-    -- STEP 5: Find best egg
-    warn("[FLOW] STEP 5: Hanapin best egg...")
+    -- STEP 4: Find best egg (bago pa mag-ragdoll)
+    warn("[FLOW] STEP 4: Hanapin best egg...")
     local best, bestValue = findBestEgg()
     if not best then
         warn("[FLOW] Walang best egg (≥ 10M)!")
@@ -420,35 +464,21 @@ local function mainFlow()
     warn(("[FLOW] Best: %s /s (%s)"):format(
         formatNumber(bestValue), best.AreaId))
 
-    -- STEP 6: TP sa AREA ng best egg
-    local areaPos = getAreaCenter(best.AreaId)
-    if not areaPos then
-        areaPos = getEggPos(best)
-    end
+    -- STEP 5: Wait for ragdoll + TP AGAD
+    warn("[FLOW] STEP 5: Hintayin ma-ragdoll AT TP AGAD...")
+    waitForRagdollAndTP(best, bestValue, State.ragdollWait)
 
-    if areaPos then
-        State.targetArea = best.AreaId
-        State.targetPos = areaPos
+    -- STEP 6: Confirm nasa area
+    task.wait(0.5)
+    if not State.running then return end
 
-        warn(("[FLOW] TP sa %s area (%.0f, %.0f, %.0f)..."):format(
-            best.AreaId, areaPos.X, areaPos.Y, areaPos.Z))
+    -- STEP 7: Start hold
+    startAntiSnapbackHold()
+    warn("[HOLD] Anti-snapback hold started (every 0.5s)")
 
-        -- TP one time lang, hindi spam
-        tpTo(areaPos)
-        task.wait(0.5)
-
-        -- Start chill hold
-        startChillHold()
-        warn("[HOLD] Chill hold started (every 1.5s check)")
-    end
-
-    -- STEP 7: STAY — tapos na
-    warn(("=== TAPOS — NASA %s AREA NA, STAY ==="):format(best.AreaId))
-    ui.Status2.Text = ("✅ %s — STAY"):format(best.AreaId)
+    warn(("=== TAPOS — NASA %s AREA NA, HOLDING ==="):format(best.AreaId))
+    ui.Status2.Text = ("✅ %s — HOLDING"):format(best.AreaId)
     ui.Status2.TextColor3 = COLORS.GREEN
-
-    -- ⚠️ State.running = true pa rin - para tuloy yung hold
-    -- I-toggle OFF para i-stop
 end
 
 -- ============ UI ============
@@ -565,7 +595,7 @@ local function createUI()
     Status.Size = UDim2.new(1, -30, 0, 20)
     Status.Position = UDim2.new(0, 15, 0, 100)
     Status.BackgroundTransparency = 1
-    Status.Text = "Flow: Forest → Ragdoll → Best AREA"
+    Status.Text = "Flow: Ragdoll → TP AGAD → Area"
     Status.TextColor3 = COLORS.CYAN
     Status.TextSize = 10
     Status.Font = Enum.Font.Gotham
@@ -611,7 +641,8 @@ ui.btn.MouseButton1Click:Connect(function()
     else
         State.running = false
         setToggle(false)
-        stopChillHold()
+        stopAntiSnapbackHold()
+        stopDeathGuard()
         State.targetPos = nil
         State.targetArea = nil
         ui.Status2.Text = "Stopped"
@@ -621,7 +652,8 @@ end)
 
 ui.CloseBtn.MouseButton1Click:Connect(function()
     State.running = false
-    stopChillHold()
+    stopAntiSnapbackHold()
+    stopDeathGuard()
     State.targetPos = nil
     State.targetArea = nil
     ui.ScreenGui:Destroy()
@@ -630,10 +662,11 @@ end)
 task.spawn(function()
     task.wait(0.5)
     if loadModules() then
-        ui.Status2.Text = "✅ Ready | Forest → Best Area"
+        ui.Status2.Text = "✅ Ready | Ragdoll → TP AGAD"
         ui.Status2.TextColor3 = COLORS.GREEN
     else
         ui.Status2.Text = "⚠️ Waiting for game..."
         ui.Status2.TextColor3 = COLORS.YELLOW
     end
 end)
+        
