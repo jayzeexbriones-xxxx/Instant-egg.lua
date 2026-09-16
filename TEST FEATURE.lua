@@ -3,7 +3,7 @@
 -- Flow:
 -- 1. TP sa Forest
 -- 2. Grab chicken egg
--- 3. Hintayin ma-RAGDOLL (chicken hit)
+-- 3. Hintayin ma-RAGDOLL (RagdollEndTime attribute)
 -- 4. TP sa pinaka-high value egg
 -- 5. Grab best egg
 -- ============================================================
@@ -22,7 +22,7 @@ local State = {
     minArea      = 10,
     minValue     = 5e7,
     chickenTP    = CFrame.new(514, 71, -368),
-    ragdollWait  = 20,        -- max wait sa ragdoll
+    ragdollWait  = 20,
 }
 
 local AREA_NAMES = {
@@ -248,29 +248,28 @@ local function grabEgg(rec)
     return false, "no prompt"
 end
 
--- ============ RAGDOLL CHECK ============
+-- ============ RAGDOLL CHECK (FIXED) ============
+-- Base sa DEBUG: RagdollEndTime yung reliable signal
 local function isRagdolled()
-    local hum = getHum()
-    if not hum then return false end
-
-    if hum.PlatformStand then return true end
-
-    local st = hum:GetState()
-    return st == Enum.HumanoidStateType.Ragdoll
-        or st == Enum.HumanoidStateType.Physics
-        or st == Enum.HumanoidStateType.FallingDown
+    local t = LocalPlayer:GetAttribute("RagdollEndTime")
+    if type(t) == "number" and t > workspace:GetServerTimeNow() then
+        return true
+    end
+    return false
 end
 
 -- ============ WAIT FOR RAGDOLL ============
 local function waitForRagdoll(timeout)
-    warn("[CHICKEN] Hinihintay ma-ragdoll (na-hit ng chicken)...")
+    warn("[CHICKEN] Hinihintay ma-ragdoll...")
     local t0 = os.clock()
 
     while os.clock() - t0 < timeout do
         if not State.running then return false end
 
         if isRagdolled() then
-            warn(("[CHICKEN] ✅ Na-ragdoll! (%.2fs)"):format(os.clock() - t0))
+            local remaining = LocalPlayer:GetAttribute("RagdollEndTime") - workspace:GetServerTimeNow()
+            warn(("[CHICKEN] ✅ Na-ragdoll! (%.2fs remaining)"):format(remaining))
+
             -- Hintayin matapos ragdoll (max 3s)
             local rdStart = os.clock()
             while isRagdolled() and (os.clock() - rdStart) < 3 do
@@ -347,7 +346,7 @@ local function mainFlow()
     local hit = waitForRagdoll(State.ragdollWait)
 
     if not hit then
-        warn("[FLOW] Walang ragdoll - pero tuloy pa rin sa best egg")
+        warn("[FLOW] Walang ragdoll - pero tuloy pa rin")
     end
 
     task.wait(0.5)
