@@ -1,6 +1,6 @@
 -- ============================================================
--- AUTO GRAB BEST EGG — FAST VERSION
--- Instant grab, no tween, no TP
+-- AUTO GRAB HIGH VALUE EGG — 150M+ ONLY
+-- Pinaka-mataas na value lang (≥ 150 Million /s)
 -- ============================================================
 
 local Players           = game:GetService("Players")
@@ -11,12 +11,12 @@ local LocalPlayer       = Players.LocalPlayer
 
 -- ============ STATE ============
 local State = {
-    running    = false,
-    minArea    = 10,
-    checkDelay = 0.05,      -- ⚡ 6x faster (from 0.3)
-    grabCooldown = 1,       -- ⚡ 1s lang (from 5)
-    postGrabWait = 0.1,     -- ⚡ 0.1s lang (from 0.5)
-    multiGrab = true,       -- ⚡ Grab lahat ng best sa isang pass
+    running      = false,
+    minArea      = 10,
+    minValue     = 1.5e8,    -- 💰 150 MILLION minimum
+    checkDelay   = 0.05,
+    grabCooldown = 1,
+    postGrabWait = 0.1,
 }
 
 local AREA_NAMES = {
@@ -27,6 +27,9 @@ local AREA_NAMES = {
 
 -- ============ MODULES ============
 local EggState = nil
+local AssetsDir = nil
+local Mutations = nil
+local AssetEarnings = nil
 
 local function loadModules()
     if EggState then return true end
@@ -35,6 +38,33 @@ local function loadModules()
         if client then
             local es = client:FindFirstChild("EggState")
             if es then EggState = require(es) end
+        end
+        local data = ReplicatedStorage:FindFirstChild("Data")
+        if data then
+            local assets = data:FindFirstChild("Assets")
+            if assets then
+                local okA, mod = pcall(require, assets)
+                if okA and mod then AssetsDir = mod.Directory end
+            end
+        end
+        local shared = ReplicatedStorage:FindFirstChild("Shared")
+        if shared then
+            local modules = shared:FindFirstChild("Modules")
+            if modules then
+                local mut = modules:FindFirstChild("Mutations")
+                if mut then
+                    local okM, mod = pcall(require, mut)
+                    if okM then Mutations = mod end
+                end
+            end
+            local util = shared:FindFirstChild("Util")
+            if util then
+                local ae = util:FindFirstChild("AssetEarnings")
+                if ae then
+                    local okE, mod = pcall(require, ae)
+                    if okE then AssetEarnings = mod end
+                end
+            end
         end
     end)
     return ok and EggState ~= nil
@@ -60,13 +90,54 @@ local function getEggPos(rec)
     return nil
 end
 
--- ============ FIND ALL BEST EGGS (multi) ============
-local function findAllBestEggs()
-    if not EggState then return {} end
-    local ok, fieldEggs = pcall(function() return EggState.ReadFieldEggs() end)
-    if not ok or not fieldEggs or not fieldEggs.Records then return {} end
+-- ============ 💰 CALCULATE EGG VALUE ============
+local function calcEggValue(rec)
+    if not rec then return 0 end
 
-    local eggs = {}
+    if AssetEarnings then
+        local ok, rate = pcall(function()
+            local item = {
+                Category = rec.AssetCategory,
+                Scale = tonumber(rec.AssetScale) or 1,
+                Mutations = rec.Mutations or {},
+            }
+            return AssetEarnings.LiveRatePerSecond(item, nil, nil, LocalPlayer)
+        end)
+        if ok and type(rate) == "number" and rate > 0 then
+            return rate
+        end
+    end
+
+    local rarity = getRarityNumber(rec)
+    local scale = getAssetScale(rec)
+    local mutMult = 1
+
+    if rec.Mutations and #rec.Mutations > 0 and Mutations then
+        pcall(function()
+            local item = { Mutations = rec.Mutations }
+            mutMult = Mutations.EarningsFor(item) or 1
+        end)
+    end
+
+    local baseRate = 0
+    if AssetsDir then
+        local dir = AssetsDir[rec.AssetCategory]
+        if dir then baseRate = tonumber(dir.EarningRate) or 0 end
+    end
+
+    local scaleFactor = scale <= 5 and scale ^ 1.85 or (scale / 5) ^ 1.2 * 19.637875755794113
+    local value = baseRate * scaleFactor * mutMult
+    return math.max(1, math.round(value))
+end
+
+-- ============ FIND HIGHEST VALUE EGG (≥ 150M) ============
+local function findHighestValueEgg()
+    if not EggState then return nil, 0 end
+    local ok, fieldEggs = pcall(function() return EggState.ReadFieldEggs() end)
+    if not ok or not fieldEggs or not fieldEggs.Records then return nil, 0 end
+
+    local bestRec = nil
+    local bestValue = 0
 
     for _, rec in ipairs(fieldEggs.Records) do
         if rec.State == "Slot" or rec.State == "Dropped" then
@@ -76,24 +147,23 @@ local function findAllBestEggs()
             end
 
             if areaIdx and areaIdx >= State.minArea then
-                local rarityNum = getRarityNumber(rec)
-                local scale = getAssetScale(rec)
-                local score = (rarityNum * 1000) + scale
-                eggs[#eggs + 1] = { rec = rec, score = score }
+                local value = calcEggValue(rec)
+                -- 💰 FILTER: ≥ 150M lang
+                if value >= State.minValue and value > bestValue then
+                    bestValue = value
+                    bestRec = rec
+                end
             end
         end
     end
 
-    -- Sort highest score first
-    table.sort(eggs, function(a, b) return a.score > b.score end)
-    return eggs
+    return bestRec, bestValue
 end
 
 -- ============ FAST GRAB ============
 local function fastGrabEgg(rec)
-    if not rec then return false end
+    if not rec then return false, "no rec" end
 
-    -- 1. INSTANT CARRY (fastest)
     local ok1, res1 = pcall(function()
         return EggState.CarryFieldEgg(rec.Uid)
     end)
@@ -101,7 +171,6 @@ local function fastGrabEgg(rec)
         return true, "instant"
     end
 
-    -- 2. PROMPT FALLBACK
     local eggPos = getEggPos(rec)
     if not eggPos then return false, "no pos" end
 
@@ -129,17 +198,29 @@ local function fastGrabEgg(rec)
     return false, "no prompt"
 end
 
--- ============ MAIN LOOP (FAST) ============
+-- ============ FORMAT NUMBER ============
+local function formatNumber(n)
+    n = tonumber(n) or 0
+    local units = {{1e12,"T"},{1e9,"B"},{1e6,"M"},{1e3,"K"}}
+    for _, u in ipairs(units) do
+        if n >= u[1] then
+            local v = n / u[1]
+            return string.format("%.2f%s", v, u[2])
+        end
+    end
+    return tostring(math.round(n))
+end
+
+-- ============ MAIN LOOP ============
 local function mainLoop()
     State.running = true
-    warn("=== FAST AUTO GRAB START ===")
+    warn("=== HIGH VALUE AUTO GRAB START (150M+) ===")
 
     local lastGrabbed = {}
     local grabCount = 0
 
     while State.running do
         task.wait(State.checkDelay)
-
         if not State.running then break end
 
         if not loadModules() then
@@ -147,34 +228,24 @@ local function mainLoop()
             continue
         end
 
-        local bestEggs = findAllBestEggs()
-        if #bestEggs > 0 then
-            -- Kunin lahat ng best eggs (kung multiGrab) o pinaka-best lang
-            local toGrab = State.multiGrab and bestEggs or { bestEggs[1] }
+        local rec, value = findHighestValueEgg()
+        if rec and value >= State.minValue then
+            local lastTime = lastGrabbed[rec.Uid]
+            if not lastTime or (tick() - lastTime) > State.grabCooldown then
+                lastGrabbed[rec.Uid] = tick()
 
-            for _, item in ipairs(toGrab) do
-                if not State.running then break end
-
-                local rec = item.rec
-                local lastTime = lastGrabbed[rec.Uid]
-
-                if not lastTime or (tick() - lastTime) > State.grabCooldown then
-                    lastGrabbed[rec.Uid] = tick()
-
-                    local ok, method = fastGrabEgg(rec)
-                    if ok then
-                        grabCount = grabCount + 1
-                        warn(("[GRAB #%d] ✅ %s (%s) via %s"):format(
-                            grabCount, rec.Uid, rec.AreaId, method))
-                    end
-
-                    task.wait(State.postGrabWait)
+                local ok, method = fastGrabEgg(rec)
+                if ok then
+                    grabCount = grabCount + 1
+                    warn(("[GRAB #%d] ✅ %s | %s /s | %s | %s"):format(
+                        grabCount, rec.AreaId, formatNumber(value), method, rec.Uid))
                 end
+
+                task.wait(State.postGrabWait)
             end
         end
 
-        -- Cleanup old entries every 10s
-        if grabCount % 100 == 0 then
+        if grabCount % 50 == 0 then
             local now = tick()
             for uid, t in pairs(lastGrabbed) do
                 if now - t > 30 then lastGrabbed[uid] = nil end
@@ -182,7 +253,7 @@ local function mainLoop()
         end
     end
 
-    warn("=== FAST AUTO GRAB STOP ===")
+    warn("=== HIGH VALUE AUTO GRAB STOP ===")
 end
 
 -- ============ UI ============
@@ -196,7 +267,7 @@ local COLORS = {
     KNOB = Color3.fromRGB(255, 255, 255),
     TRACK_OFF = Color3.fromRGB(70, 70, 80),
     YELLOW = Color3.fromRGB(255, 200, 0),
-    CYAN = Color3.fromRGB(80, 200, 255),
+    GOLD = Color3.fromRGB(255, 215, 0),
 }
 
 local function createUI()
@@ -210,8 +281,8 @@ local function createUI()
     ScreenGui.Parent = CoreGui
 
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 260, 0, 150)
-    Main.Position = UDim2.new(0.5, -130, 0.5, -75)
+    Main.Size = UDim2.new(0, 290, 0, 175)
+    Main.Position = UDim2.new(0.5, -145, 0.5, -87)
     Main.BackgroundColor3 = COLORS.BG
     Main.BorderSizePixel = 0
     Main.Active = true
@@ -238,8 +309,8 @@ local function createUI()
     Title.Size = UDim2.new(1, -50, 1, 0)
     Title.Position = UDim2.new(0, 12, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "⚡ Auto Grab Best Egg"
-    Title.TextColor3 = COLORS.CYAN
+    Title.Text = "💰 Auto Grab 150M+"
+    Title.TextColor3 = COLORS.GOLD
     Title.TextSize = 13
     Title.Font = Enum.Font.GothamBold
     Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -254,12 +325,11 @@ local function createUI()
     CloseBtn.Font = Enum.Font.GothamBold
     Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
 
-    -- Toggle
     local lbl = Instance.new("TextLabel", Main)
     lbl.Size = UDim2.new(1, -120, 0, 25)
     lbl.Position = UDim2.new(0, 15, 0, 55)
     lbl.BackgroundTransparency = 1
-    lbl.Text = "⚡ Fast Auto Grab"
+    lbl.Text = "💰 150M+ Only"
     lbl.TextColor3 = COLORS.TEXT
     lbl.TextSize = 14
     lbl.Font = Enum.Font.GothamBold
@@ -295,20 +365,41 @@ local function createUI()
     btn.BackgroundTransparency = 1
     btn.Text = ""
 
+    local InfoLbl = Instance.new("TextLabel", Main)
+    InfoLbl.Size = UDim2.new(1, -30, 0, 18)
+    InfoLbl.Position = UDim2.new(0, 15, 0, 90)
+    InfoLbl.BackgroundTransparency = 1
+    InfoLbl.Text = "Best: -- /s"
+    InfoLbl.TextColor3 = COLORS.GOLD
+    InfoLbl.TextSize = 11
+    InfoLbl.Font = Enum.Font.GothamBold
+    InfoLbl.TextXAlignment = Enum.TextXAlignment.Left
+
     local Status = Instance.new("TextLabel", Main)
-    Status.Size = UDim2.new(1, -30, 0, 20)
-    Status.Position = UDim2.new(0, 15, 0, 115)
+    Status.Size = UDim2.new(1, -30, 0, 18)
+    Status.Position = UDim2.new(0, 15, 0, 110)
     Status.BackgroundTransparency = 1
-    Status.Text = "Status: Ready"
+    Status.Text = "Min: 150.00M /s"
     Status.TextColor3 = COLORS.YELLOW
-    Status.TextSize = 11
+    Status.TextSize = 10
     Status.Font = Enum.Font.Gotham
     Status.TextXAlignment = Enum.TextXAlignment.Left
+
+    local Stats = Instance.new("TextLabel", Main)
+    Stats.Size = UDim2.new(1, -30, 0, 18)
+    Stats.Position = UDim2.new(0, 15, 0, 130)
+    Stats.BackgroundTransparency = 1
+    Stats.Text = "Grabbed: 0"
+    Stats.TextColor3 = COLORS.GREEN
+    Stats.TextSize = 10
+    Stats.Font = Enum.Font.Gotham
+    Stats.TextXAlignment = Enum.TextXAlignment.Left
 
     return {
         ScreenGui = ScreenGui, Main = Main,
         track = track, knob = knob, state = state, btn = btn,
-        Status = Status, CloseBtn = CloseBtn
+        Status = Status, InfoLbl = InfoLbl, Stats = Stats,
+        CloseBtn = CloseBtn
     }
 end
 
@@ -321,22 +412,37 @@ local function setToggle(on)
     ui.state.TextColor3 = on and COLORS.GREEN or COLORS.RED
 end
 
+-- Live info update
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if State.running then
+            local rec, value = findHighestValueEgg()
+            if rec and value > 0 then
+                ui.InfoLbl.Text = ("Best: %s /s (%s)"):format(formatNumber(value), rec.AreaId)
+            else
+                ui.InfoLbl.Text = "Best: -- /s"
+            end
+        end
+    end
+end)
+
 -- Toggle click
 ui.btn.MouseButton1Click:Connect(function()
     if not State.running then
         if not loadModules() then
-            ui.Status.Text = "Status: ❌ EggState not found"
+            ui.Status.Text = "❌ EggState not found"
             ui.Status.TextColor3 = COLORS.RED
             return
         end
         setToggle(true)
-        ui.Status.Text = "Status: ⚡ FAST Monitoring..."
-        ui.Status.TextColor3 = COLORS.CYAN
+        ui.Status.Text = "Min: 150.00M /s"
+        ui.Status.TextColor3 = COLORS.GREEN
         task.spawn(mainLoop)
     else
         State.running = false
         setToggle(false)
-        ui.Status.Text = "Status: Stopped"
+        ui.Status.Text = "Stopped"
         ui.Status.TextColor3 = COLORS.YELLOW
     end
 end)
@@ -350,10 +456,10 @@ end)
 task.spawn(function()
     task.wait(0.5)
     if loadModules() then
-        ui.Status.Text = "Status: ✅ Ready (fast mode)"
+        ui.Status.Text = "✅ Ready | Min: 150.00M /s"
         ui.Status.TextColor3 = COLORS.GREEN
     else
-        ui.Status.Text = "Status: ⚠️ Waiting for game..."
+        ui.Status.Text = "⚠️ Waiting for game..."
         ui.Status.TextColor3 = COLORS.YELLOW
     end
 end)
