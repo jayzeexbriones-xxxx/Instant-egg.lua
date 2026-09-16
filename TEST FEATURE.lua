@@ -1,11 +1,12 @@
 -- ============================================================
--- CHICKEN RAGDOLL → TP BEST EGG
+-- CHICKEN RAGDOLL → TP BEST EGG → STAY
 -- Flow:
 -- 1. TP sa Forest
 -- 2. Grab chicken egg
 -- 3. Hintayin ma-RAGDOLL (RagdollEndTime attribute)
 -- 4. TP sa pinaka-high value egg
 -- 5. Grab best egg
+-- 6. STAY — tapos na, hindi na babalik
 -- ============================================================
 
 local Players           = game:GetService("Players")
@@ -248,8 +249,7 @@ local function grabEgg(rec)
     return false, "no prompt"
 end
 
--- ============ RAGDOLL CHECK (FIXED) ============
--- Base sa DEBUG: RagdollEndTime yung reliable signal
+-- ============ RAGDOLL CHECK ============
 local function isRagdolled()
     local t = LocalPlayer:GetAttribute("RagdollEndTime")
     if type(t) == "number" and t > workspace:GetServerTimeNow() then
@@ -270,7 +270,6 @@ local function waitForRagdoll(timeout)
             local remaining = LocalPlayer:GetAttribute("RagdollEndTime") - workspace:GetServerTimeNow()
             warn(("[CHICKEN] ✅ Na-ragdoll! (%.2fs remaining)"):format(remaining))
 
-            -- Hintayin matapos ragdoll (max 3s)
             local rdStart = os.clock()
             while isRagdolled() and (os.clock() - rdStart) < 3 do
                 if not State.running then return false end
@@ -300,7 +299,7 @@ local function formatNumber(n)
     return tostring(math.round(n))
 end
 
--- ============ MAIN FLOW ============
+-- ============ MAIN FLOW (ONE-TIME, NO LOOP) ============
 local function mainFlow()
     State.running = true
     warn("=== CHICKEN RAGDOLL → BEST EGG START ===")
@@ -379,8 +378,11 @@ local function mainFlow()
         end
     end
 
-    warn("=== TAPOS ===")
+    -- STEP 8: STAY — tapos na, walang balikan
+    warn("=== TAPOS — NASA BEST EGG AREA NA, STAY LANG DITO ===")
     State.running = false
+    ui.Status2.Text = "✅ Nasa best egg — STAY"
+    ui.Status2.TextColor3 = COLORS.GREEN
 end
 
 -- ============ UI ============
