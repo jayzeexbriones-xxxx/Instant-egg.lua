@@ -1,9 +1,81 @@
 -- ============================================
--- STEP 1: LOAD SPEED BYPASS
+-- STEP 1: CUSTOM SPEED BYPASS (Adjustable via Slider)
 -- ============================================
-pcall(function(...)
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/Lutosys/opensrc/refs/heads/main/stealaeggspeedbypass.lua"))()
-end)
+local speedBypass = {
+    RunService = game:GetService("RunService"),
+    Players = game:GetService("Players"),
+    speed = 300,       -- default
+    active = false,    -- OFF by default
+}
+
+function speedBypass:findFunction(nups, linedefined)
+    local s, r = pcall(function(...)
+        for _, f in next, getgc() do
+            if typeof(f) == 'function' and islclosure(f) then
+                local upvs = debug.getupvalues(f)
+                local line = debug.info(f, "l")
+                if upvs and #upvs == nups and line == linedefined then
+                    if nups == 10 then
+                        local t = debug.getupvalue(f, 3)
+                        if typeof(t) == "table" and rawget(t, "Humanoid") then
+                            return f
+                        end
+                    else
+                        return f
+                    end
+                end
+            end
+        end
+        return nil
+    end)
+    if s and r then return r end
+    return nil
+end
+
+function speedBypass:safehook(f, c)
+    local s, r = pcall(function(...)
+        return hookfunction(f, newlclosure(c))
+    end)
+    if s and r then return r end
+    return warn("failed to hook: "..tostring(r))
+end
+
+function speedBypass:init()
+    local LP = self.Players.LocalPlayer
+    if not LP then return warn("no localplayer") end
+
+    if not getgc or not hookfunction or not islclosure then
+        return warn("UNSUPPORTED EXECUTOR")
+    end
+
+    local func3 = self:findFunction(19, 634)
+    if not func3 then return warn("func3 not found") end
+
+    local v7 = debug.getupvalue(func3, 2)
+    if not v7 then return warn("v7 not found") end
+
+    local hookedfunc3
+    hookedfunc3 = self:safehook(v7, function(p1, p2)
+        if p2 and typeof(p2) == "table" then
+            setmetatable(p2, {})
+        end
+        return hookedfunc3(p1, p2)
+    end)
+
+    self.conn = self.RunService.Heartbeat:Connect(function()
+        if not self.active then return end
+        local char = LP.Character
+        if not char then return end
+        local hum = char:FindFirstChild("Humanoid")
+        if not hum then return end
+        hum.WalkSpeed = self.speed
+    end)
+
+    print("[SpeedBypass] ✅ Hook installed")
+    return true
+end
+
+speedBypass:init()
 
 -- ============================================
 -- STEP 2: SERVICES
@@ -22,7 +94,9 @@ local utility = {
 -- STEP 3: CONFIG
 -- ============================================
 getgenv().config = {
-    speedValue = 260,
+    normalSpeed = 16,
+    fastSpeed = 300,
+    currentSpeed = 16,
 }
 
 -- ============================================
@@ -435,7 +509,6 @@ function utility:startAutoGrab()
     self.autoGrabConn = self.RunService.Heartbeat:Connect(function()
         if not self.autoGrabEnabled then return end
 
-        -- Throttle sa 0.1s
         local now = tick()
         if self.autoGrabLastCheck and (now - self.autoGrabLastCheck) < checkDelay then
             return
@@ -459,8 +532,8 @@ function utility:startAutoGrab()
                         self.autoGrabCount = self.autoGrabCount + 1
                         self.autoGrabLastValue = value
                         print(("[AutoGrab #%d] ✅ %s /s (%s)"):format(
-                            self.autoGrabCount, 
-                            string.format("%.2fM", value / 1e6), 
+                            self.autoGrabCount,
+                            string.format("%.2fM", value / 1e6),
                             rec.AreaId))
                         task.wait(postGrabWait)
                         break
@@ -481,7 +554,7 @@ function utility:stopAutoGrab()
 end
 
 -- ============================================
--- STEP 9: UI (COMPACT VERSION)
+-- STEP 9: UI (COMPACT + SPEED SLIDER)
 -- ============================================
 local COLORS = {
     BG = Color3.fromRGB(25, 25, 30),
@@ -493,6 +566,8 @@ local COLORS = {
     KNOB = Color3.fromRGB(255, 255, 255),
     TRACK_OFF = Color3.fromRGB(70, 70, 80),
     GOLD = Color3.fromRGB(255, 215, 0),
+    SLIDER_BG = Color3.fromRGB(45, 45, 55),
+    SLIDER_FILL = Color3.fromRGB(0, 180, 90),
 }
 
 local function createUI()
@@ -505,10 +580,10 @@ local function createUI()
     ScreenGui.ResetOnSpawn = false
     ScreenGui.Parent = utility.CoreGui
 
-    -- 🎯 MAS MALIIT: 220 x 300
+    -- 🎯 PANEL: 230 x 375 (kasama slider)
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 220, 0, 300)
-    Main.Position = UDim2.new(0.5, -110, 0.5, -150)
+    Main.Size = UDim2.new(0, 230, 0, 375)
+    Main.Position = UDim2.new(0.5, -115, 0.5, -187)
     Main.BackgroundColor3 = COLORS.BG
     Main.BorderSizePixel = 0
     Main.Active = true
@@ -520,6 +595,7 @@ local function createUI()
     local s1 = Instance.new("UIStroke", Main)
     s1.Color = COLORS.STROKE
 
+    -- Title bar
     local TitleBar = Instance.new("Frame", Main)
     TitleBar.Size = UDim2.new(1, 0, 0, 28)
     TitleBar.BackgroundColor3 = COLORS.TITLE_BG
@@ -553,7 +629,7 @@ local function createUI()
     local c3 = Instance.new("UICorner", CloseBtn)
     c3.CornerRadius = UDim.new(0, 5)
 
-    -- 🎯 COMPACT TOGGLE: 40x22, font 11
+    -- Compact toggle (40x22)
     local function makeToggle(y, label, icon)
         local lbl = Instance.new("TextLabel", Main)
         lbl.Size = UDim2.new(1, -105, 0, 22)
@@ -592,24 +668,91 @@ local function createUI()
         kc.CornerRadius = UDim.new(1, 0)
 
         local btn = Instance.new("TextButton", Main)
-        btn.Size = UDim2.new(0, 100, 0, 30)
-        btn.Position = UDim2.new(1, -105, 0, y - 4)
+        btn.Size = UDim2.new(0, 105, 0, 30)
+        btn.Position = UDim2.new(1, -110, 0, y - 4)
         btn.BackgroundTransparency = 1
         btn.Text = ""
 
         return {track = track, knob = knob, state = state, btn = btn}
     end
 
-    local speedToggle = makeToggle(38, "Speed Bypass", "⚡")
-    local pickupToggle = makeToggle(72, "Instant Pickup", "⚡")
-    local ragdollToggle = makeToggle(106, "Anti-Ragdoll", "🛡️")
-    local antiTrapToggle = makeToggle(140, "Anti-Trap", "🪤")
-    local autoGrabToggle = makeToggle(174, "Auto Grab 50M+", "💰")
+    -- === SPEED SLIDER ===
+    local SpeedLabel = Instance.new("TextLabel", Main)
+    SpeedLabel.Size = UDim2.new(1, -20, 0, 16)
+    SpeedLabel.Position = UDim2.new(0, 12, 0, 38)
+    SpeedLabel.BackgroundTransparency = 1
+    SpeedLabel.Text = "⚡ Speed: OFF (16)"
+    SpeedLabel.TextColor3 = COLORS.TEXT
+    SpeedLabel.TextSize = 11
+    SpeedLabel.Font = Enum.Font.GothamBold
+    SpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
 
-    -- Auto Grab info (compact)
+    -- Slider track
+    local SliderTrack = Instance.new("Frame", Main)
+    SliderTrack.Size = UDim2.new(1, -24, 0, 8)
+    SliderTrack.Position = UDim2.new(0, 12, 0, 58)
+    SliderTrack.BackgroundColor3 = COLORS.SLIDER_BG
+    SliderTrack.BorderSizePixel = 0
+    local tc = Instance.new("UICorner", SliderTrack)
+    tc.CornerRadius = UDim.new(1, 0)
+
+    -- Slider fill
+    local SliderFill = Instance.new("Frame", SliderTrack)
+    SliderFill.Size = UDim2.new(0.5, 0, 1, 0)   -- default 50% (para sa 300 range)
+    SliderFill.BackgroundColor3 = COLORS.SLIDER_FILL
+    SliderFill.BorderSizePixel = 0
+    local fc = Instance.new("UICorner", SliderFill)
+    fc.CornerRadius = UDim.new(1, 0)
+
+    -- Slider knob
+    local SliderKnob = Instance.new("Frame", SliderTrack)
+    SliderKnob.Size = UDim2.new(0, 16, 0, 16)
+    SliderKnob.Position = UDim2.new(0.5, -8, 0.5, -8)   -- center
+    SliderKnob.BackgroundColor3 = COLORS.KNOB
+    SliderKnob.BorderSizePixel = 0
+    SliderKnob.ZIndex = 2
+    local kc = Instance.new("UICorner", SliderKnob)
+    kc.CornerRadius = UDim.new(1, 0)
+
+    -- Slider button (invisible overlay for click/drag)
+    local SliderBtn = Instance.new("TextButton", SliderTrack)
+    SliderBtn.Size = UDim2.new(1, 0, 3, 0)
+    SliderBtn.Position = UDim2.new(0, 0, -1, 0)
+    SliderBtn.BackgroundTransparency = 1
+    SliderBtn.Text = ""
+
+    -- Min/Max labels
+    local MinLabel = Instance.new("TextLabel", Main)
+    MinLabel.Size = UDim2.new(0, 40, 0, 12)
+    MinLabel.Position = UDim2.new(0, 12, 0, 70)
+    MinLabel.BackgroundTransparency = 1
+    MinLabel.Text = "100"
+    MinLabel.TextColor3 = Color3.fromRGB(130, 130, 140)
+    MinLabel.TextSize = 9
+    MinLabel.Font = Enum.Font.Gotham
+    MinLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    local MaxLabel = Instance.new("TextLabel", Main)
+    MaxLabel.Size = UDim2.new(0, 40, 0, 12)
+    MaxLabel.Position = UDim2.new(1, -52, 0, 70)
+    MaxLabel.BackgroundTransparency = 1
+    MaxLabel.Text = "500"
+    MaxLabel.TextColor3 = Color3.fromRGB(130, 130, 140)
+    MaxLabel.TextSize = 9
+    MaxLabel.Font = Enum.Font.Gotham
+    MaxLabel.TextXAlignment = Enum.TextXAlignment.Right
+
+    -- Toggles
+    local speedToggle = makeToggle(88, "Speed Bypass", "⚡")
+    local pickupToggle = makeToggle(122, "Instant Pickup", "⚡")
+    local ragdollToggle = makeToggle(156, "Anti-Ragdoll", "🛡️")
+    local antiTrapToggle = makeToggle(190, "Anti-Trap", "🪤")
+    local autoGrabToggle = makeToggle(224, "Auto Grab 50M+", "💰")
+
+    -- Auto Grab info
     local GrabInfo = Instance.new("TextLabel", Main)
     GrabInfo.Size = UDim2.new(1, -20, 0, 16)
-    GrabInfo.Position = UDim2.new(0, 12, 0, 200)
+    GrabInfo.Position = UDim2.new(0, 12, 0, 252)
     GrabInfo.BackgroundTransparency = 1
     GrabInfo.Text = "Next: -- | Grabbed: 0"
     GrabInfo.TextColor3 = COLORS.GOLD
@@ -619,7 +762,7 @@ local function createUI()
 
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -20, 0, 16)
-    Status.Position = UDim2.new(0, 12, 0, 218)
+    Status.Position = UDim2.new(0, 12, 0, 270)
     Status.BackgroundTransparency = 1
     Status.Text = "Status: Ready"
     Status.TextColor3 = Color3.fromRGB(255, 200, 0)
@@ -627,10 +770,9 @@ local function createUI()
     Status.Font = Enum.Font.Gotham
     Status.TextXAlignment = Enum.TextXAlignment.Left
 
-    -- Flow hint
     local FlowHint = Instance.new("TextLabel", Main)
     FlowHint.Size = UDim2.new(1, -20, 0, 14)
-    FlowHint.Position = UDim2.new(0, 12, 0, 240)
+    FlowHint.Position = UDim2.new(0, 12, 0, 292)
     FlowHint.BackgroundTransparency = 1
     FlowHint.Text = "💡 1B → 500M → 100M → 50M"
     FlowHint.TextColor3 = Color3.fromRGB(100, 200, 255)
@@ -638,10 +780,9 @@ local function createUI()
     FlowHint.Font = Enum.Font.Gotham
     FlowHint.TextXAlignment = Enum.TextXAlignment.Left
 
-    -- Stats line
     local StatsLine = Instance.new("TextLabel", Main)
     StatsLine.Size = UDim2.new(1, -20, 0, 14)
-    StatsLine.Position = UDim2.new(0, 12, 0, 258)
+    StatsLine.Position = UDim2.new(0, 12, 0, 310)
     StatsLine.BackgroundTransparency = 1
     StatsLine.Text = "Min: 50M | Area: 10+"
     StatsLine.TextColor3 = Color3.fromRGB(150, 150, 160)
@@ -655,6 +796,9 @@ local function createUI()
         ragdollToggle = ragdollToggle, antiTrapToggle = antiTrapToggle,
         autoGrabToggle = autoGrabToggle,
         GrabInfo = GrabInfo, Status = Status,
+        SpeedLabel = SpeedLabel,
+        SliderTrack = SliderTrack, SliderFill = SliderFill,
+        SliderKnob = SliderKnob, SliderBtn = SliderBtn,
         CloseBtn = CloseBtn
     }
 end
@@ -671,170 +815,50 @@ local function setToggle(t, on)
     t.state.TextColor3 = on and COLORS.GREEN or COLORS.RED
 end
 
--- ⚡ Speed
-utility.speedEnabled = false
-utility.speedConn = nil
+-- ============================================
+-- SPEED SLIDER LOGIC
+-- ============================================
+local SLIDER_MIN = 100
+local SLIDER_MAX = 500
+local currentSliderValue = 300   -- default
 
-ui.speedToggle.btn.MouseButton1Click:Connect(function()
-    utility.speedEnabled = not utility.speedEnabled
-    setToggle(ui.speedToggle, utility.speedEnabled)
-    
+local function updateSliderUI(value)
+    value = math.clamp(value, SLIDER_MIN, SLIDER_MAX)
+    currentSliderValue = value
+
+    local percent = (value - SLIDER_MIN) / (SLIDER_MAX - SLIDER_MIN)
+    ui.SliderFill.Size = UDim2.new(percent, 0, 1, 0)
+    ui.SliderKnob.Position = UDim2.new(percent, -8, 0.5, -8)
+
     if utility.speedEnabled then
-        if utility.speedConn then utility.speedConn:Disconnect() end
-        utility.speedConn = utility.RunService.Heartbeat:Connect(function()
-            if not utility.speedEnabled then return end
-            local char = utility.Players.LocalPlayer.Character
-            if not char then return end
-            local hum = char:FindFirstChild("Humanoid")
-            if not hum then return end
-            hum.WalkSpeed = getgenv().config.speedValue
-        end)
-        ui.Status.Text = "⚡ Speed ON"
-        ui.Status.TextColor3 = COLORS.GREEN
+        ui.SpeedLabel.Text = "⚡ Speed: ON (" .. value .. ")"
+        ui.SpeedLabel.TextColor3 = COLORS.GREEN
     else
-        if utility.speedConn then utility.speedConn:Disconnect() utility.speedConn = nil end
-        local char = utility.Players.LocalPlayer.Character
-        if char then
-            local hum = char:FindFirstChild("Humanoid")
-            if hum then hum.WalkSpeed = 16 end
-        end
-        ui.Status.Text = "⚡ Speed OFF"
-        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+        ui.SpeedLabel.Text = "⚡ Speed: " .. value .. " (OFF)"
+        ui.SpeedLabel.TextColor3 = COLORS.TEXT
     end
+
+    -- Update speedBypass speed
+    speedBypass.speed = value
+end
+
+-- Slider drag handler
+local draggingSlider = false
+
+local function updateSliderFromInput(inputX)
+    local trackAbsPos = ui.SliderTrack.AbsolutePosition.X
+    local trackAbsSize = ui.SliderTrack.AbsoluteSize.X
+    if trackAbsSize <= 0 then return end
+
+    local percent = math.clamp((inputX - trackAbsPos) / trackAbsSize, 0, 1)
+    local value = math.floor(SLIDER_MIN + percent * (SLIDER_MAX - SLIDER_MIN))
+    updateSliderUI(value)
+end
+
+ui.SliderBtn.MouseButton1Down:Connect(function()
+    draggingSlider = true
+    local mouse = utility.Players.LocalPlayer:GetMouse()
+    updateSliderFromInput(mouse.X)
 end)
 
--- ⚡ Instant Pickup
-utility.pickupEnabled = false
-
-ui.pickupToggle.btn.MouseButton1Click:Connect(function()
-    utility.pickupEnabled = not utility.pickupEnabled
-    setToggle(ui.pickupToggle, utility.pickupEnabled)
-    
-    if utility.pickupEnabled then
-        local ok = utility:startInstantPickup()
-        if ok then
-            ui.Status.Text = "⚡ Pickup ON"
-            ui.Status.TextColor3 = COLORS.GREEN
-        else
-            ui.Status.Text = "❌ Pickup failed"
-            ui.Status.TextColor3 = COLORS.RED
-            utility.pickupEnabled = false
-            setToggle(ui.pickupToggle, false)
-        end
-    else
-        utility:stopInstantPickup()
-        ui.Status.Text = "⚡ Pickup OFF"
-        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-    end
-end)
-
--- 🛡️ Anti-Ragdoll
-utility.antiRagdollEnabled = false
-
-ui.ragdollToggle.btn.MouseButton1Click:Connect(function()
-    utility.antiRagdollEnabled = not utility.antiRagdollEnabled
-    setToggle(ui.ragdollToggle, utility.antiRagdollEnabled)
-    
-    if utility.antiRagdollEnabled then
-        local ok, err = utility:startAntiRagdoll()
-        if ok then
-            ui.Status.Text = "🛡️ Anti-Ragdoll ON"
-            ui.Status.TextColor3 = COLORS.GREEN
-        else
-            ui.Status.Text = "❌ Anti-Ragdoll failed"
-            ui.Status.TextColor3 = COLORS.RED
-            utility.antiRagdollEnabled = false
-            setToggle(ui.ragdollToggle, false)
-        end
-    else
-        utility:stopAntiRagdoll()
-        ui.Status.Text = "🛡️ Anti-Ragdoll OFF"
-        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-    end
-end)
-
--- 🪤 Anti-Trap
-utility.antiTrapEnabled = false
-
-ui.antiTrapToggle.btn.MouseButton1Click:Connect(function()
-    utility.antiTrapEnabled = not utility.antiTrapEnabled
-    setToggle(ui.antiTrapToggle, utility.antiTrapEnabled)
-    
-    if utility.antiTrapEnabled then
-        local ok = utility:startAntiTrap()
-        if ok then
-            ui.Status.Text = "🪤 Anti-Trap ON"
-            ui.Status.TextColor3 = COLORS.GREEN
-        else
-            ui.Status.Text = "❌ Anti-Trap failed"
-            ui.Status.TextColor3 = COLORS.RED
-            utility.antiTrapEnabled = false
-            setToggle(ui.antiTrapToggle, false)
-        end
-    else
-        utility:stopAntiTrap()
-        ui.Status.Text = "🪤 Anti-Trap OFF"
-        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-    end
-end)
-
--- 💰 Auto Grab
-ui.autoGrabToggle.btn.MouseButton1Click:Connect(function()
-    utility.autoGrabEnabled = not utility.autoGrabEnabled
-    setToggle(ui.autoGrabToggle, utility.autoGrabEnabled)
-
-    if utility.autoGrabEnabled then
-        local ok, err = utility:startAutoGrab()
-        if ok then
-            ui.Status.Text = "💰 Auto Grab ON"
-            ui.Status.TextColor3 = COLORS.GREEN
-        else
-            ui.Status.Text = "❌ " .. tostring(err)
-            ui.Status.TextColor3 = COLORS.RED
-            utility.autoGrabEnabled = false
-            setToggle(ui.autoGrabToggle, false)
-        end
-    else
-        utility:stopAutoGrab()
-        ui.Status.Text = "💰 Auto Grab OFF"
-        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-    end
-end)
-
--- Live update para sa GrabInfo
-utility.RunService.Heartbeat:Connect(function()
-    if not utility.autoGrabEnabled then return end
-    local now = tick()
-    if utility.lastGrabInfoUpdate and (now - utility.lastGrabInfoUpdate) < 0.5 then
-        return
-    end
-    utility.lastGrabInfoUpdate = now
-
-    local eggs = utility:findAllHighValueEggs()
-    if #eggs > 0 then
-        local top = eggs[1]
-        ui.GrabInfo.Text = ("Next: %s | Grabbed: %d"):format(
-            string.format("%.2fM", top.value / 1e6),
-            utility.autoGrabCount or 0)
-    else
-        ui.GrabInfo.Text = ("Next: -- | Grabbed: %d"):format(utility.autoGrabCount or 0)
-    end
-end)
-
--- Close
-ui.CloseBtn.MouseButton1Click:Connect(function()
-    utility.speedEnabled = false
-    utility.pickupEnabled = false
-    utility.antiRagdollEnabled = false
-    utility.antiTrapEnabled = false
-    utility.autoGrabEnabled = false
-    if utility.speedConn then utility.speedConn:Disconnect() end
-    utility:stopInstantPickup()
-    utility:stopAntiRagdoll()
-    utility:stopAntiTrap()
-    utility:stopAutoGrab()
-    ui.ScreenGui:Destroy()
-end)
-
-ui.Status.Text = "Status: ✅ Ready"
-ui.Status.TextColor3 = COLORS.GREEN
+utility.RunService.RenderStepped:Connect(function()
