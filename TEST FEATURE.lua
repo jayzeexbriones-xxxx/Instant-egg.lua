@@ -1,33 +1,36 @@
 -- ============================================================
--- CHICKEN RAGDOLL → TP AGAD → STAY (FIXED)
+-- CHICKEN RAGDOLL → MOVETWEEN 350 → BEST EGG AREA → STAY
+-- Walang Speed Bypass - MoveTween 350 lang
 -- ============================================================
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService        = game:GetService("RunService")
+local TweenService      = game:GetService("TweenService")
 local Workspace         = game:GetService("Workspace")
 local CoreGui           = game:GetService("CoreGui")
 local LocalPlayer       = Players.LocalPlayer
 
 -- ============ STATE ============
 local State = {
-    running      = false,
-    chickenArea  = "Forest",
-    minValue     = 1e7,
-    chickenTP    = CFrame.new(514, 71, -368),
-    ragdollWait  = 20,
-    targetArea   = nil,
-    targetPos    = nil,
-    holdThread   = nil,
+    running       = false,
+    tweenSpeed    = 350,      -- 🎯 MoveTween speed
+    chickenArea   = "Forest",
+    minValue      = 1e7,      -- 10M minimum
+    ragdollWait   = 20,
+    targetArea    = nil,
+    targetPos     = nil,
 }
 
 local AREA_NAMES = {
     "Forest", "Lake", "Desert", "Jungle", "Snow",
     "Volcano", "Abyss Ocean", "Prehistoric", "Cosmic",
-    "Cherry Blossom", "Titan Temple", "Light Dark",
+    "Cherry Blossom", "Titan Temple",
 }
 
--- ============ MODULES ============
+-- ============================================================
+-- EGG STATE
+-- ============================================================
 local EggState = nil
 local AssetsDir = nil
 local Mutations = nil
@@ -72,7 +75,9 @@ local function loadModules()
     return ok and EggState ~= nil
 end
 
--- ============ HELPERS ============
+-- ============================================================
+-- HELPERS
+-- ============================================================
 local function getHRP()
     local c = LocalPlayer.Character
     return c and c:FindFirstChild("HumanoidRootPart")
@@ -81,11 +86,6 @@ end
 local function getHum()
     local c = LocalPlayer.Character
     return c and c:FindFirstChildOfClass("Humanoid")
-end
-
-local function isAlive()
-    local hum = getHum()
-    return hum and hum.Health > 0
 end
 
 local function getRarityNumber(rec)
@@ -107,7 +107,9 @@ local function getEggPos(rec)
     return nil
 end
 
--- ============ 🎯 GET AREA CENTER (MOVED UP!) ============
+-- ============================================================
+-- GET AREA CENTER
+-- ============================================================
 local function getAreaCenter(areaName)
     local ok, area = pcall(function()
         return Workspace.__OBJECTS.Areas.GuardAreas[areaName]
@@ -124,7 +126,9 @@ local function getAreaCenter(areaName)
     return nil
 end
 
--- ============ CALCULATE EGG VALUE ============
+-- ============================================================
+-- CALCULATE EGG VALUE
+-- ============================================================
 local function calcEggValue(rec)
     if not rec then return 0 end
 
@@ -164,7 +168,9 @@ local function calcEggValue(rec)
     return math.max(1, math.round(value))
 end
 
--- ============ FIND CHICKEN EGG ============
+-- ============================================================
+-- FIND CHICKEN EGG
+-- ============================================================
 local function findChickenEgg()
     if not EggState then return nil end
     local ok, fieldEggs = pcall(function() return EggState.ReadFieldEggs() end)
@@ -180,7 +186,9 @@ local function findChickenEgg()
     return nil
 end
 
--- ============ FIND BEST EGG ============
+-- ============================================================
+-- FIND BEST EGG (highest value ≥ 10M)
+-- ============================================================
 local function findBestEgg()
     if not EggState then return nil end
     local ok, fieldEggs = pcall(function() return EggState.ReadFieldEggs() end)
@@ -202,26 +210,49 @@ local function findBestEgg()
     return bestRec, bestValue
 end
 
--- ============ TP ============
-local function tpTo(pos)
+-- ============================================================
+-- 🎯 MOVE TWEEN 350
+-- ============================================================
+local function fastTweenTo(targetPos, timeout, checkFn)
     local char = LocalPlayer.Character
     local hrp = getHRP()
     if not char or not hrp then return false end
-
-    local dest = typeof(pos) == "Vector3" and pos or pos.Position
-    local target = Vector3.new(dest.X, dest.Y + 2, dest.Z)
-
-    local ok = pcall(function()
-        char:PivotTo(CFrame.new(target))
+    
+    timeout = timeout or 30
+    if (hrp.Position - targetPos).Magnitude <= 5 then return true end
+    
+    local dist = (targetPos - hrp.Position).Magnitude
+    local tweenTime = math.max(dist / State.tweenSpeed, 0.05)
+    
+    -- 🎯 MoveTween gamit TweenService (350 speed)
+    local tween = TweenService:Create(
+        hrp,
+        TweenInfo.new(tweenTime, Enum.EasingStyle.Linear),
+        { CFrame = CFrame.new(targetPos) }
+    )
+    
+    local done = false
+    tween.Completed:Connect(function()
+        done = true
     end)
-    if ok then
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.AssemblyAngularVelocity = Vector3.zero
+    
+    tween:Play()
+    
+    local t0 = tick()
+    while not done and tick() - t0 < timeout do
+        if checkFn and not checkFn() then
+            tween:Cancel()
+            return false
+        end
+        task.wait(0.01)
     end
-    return ok
+    
+    return true
 end
 
--- ============ GRAB EGG ============
+-- ============================================================
+-- GRAB EGG
+-- ============================================================
 local function grabEgg(rec)
     if not rec then return false end
 
@@ -259,7 +290,9 @@ local function grabEgg(rec)
     return false, "no prompt"
 end
 
--- ============ RAGDOLL CHECK ============
+-- ============================================================
+-- RAGDOLL CHECK
+-- ============================================================
 local function isRagdolled()
     local t = LocalPlayer:GetAttribute("RagdollEndTime")
     if type(t) == "number" and t > workspace:GetServerTimeNow() then
@@ -283,43 +316,25 @@ local function isRagdolled()
     return false, nil
 end
 
--- ============ WAIT FOR RAGDOLL + TP ============
-local function waitForRagdollAndTP(bestRec, bestValue, timeout)
+-- ============================================================
+-- WAIT FOR RAGDOLL
+-- ============================================================
+local function waitForRagdoll(timeout)
     warn("[CHICKEN] Hinihintay ma-ragdoll...")
     local t0 = os.clock()
-
-    -- ✅ getAreaCenter naka-declare na sa itaas
-    local areaPos = getAreaCenter(bestRec.AreaId) or getEggPos(bestRec)
-    if not areaPos then
-        warn("[CHICKEN] Walang area position!")
-        return false
-    end
-
-    State.targetArea = bestRec.AreaId
-    State.targetPos = areaPos
-
-    warn(("[CHICKEN] Target: %s (%.0f, %.0f, %.0f)"):format(
-        bestRec.AreaId, areaPos.X, areaPos.Y, areaPos.Z))
 
     while os.clock() - t0 < timeout do
         if not State.running then return false end
 
         local ragdolled, signal = isRagdolled()
-
         if ragdolled then
             warn(("[CHICKEN] ✅ Na-ragdoll! (signal=%s)"):format(tostring(signal)))
-            warn(("[CHICKEN] TP AGAD sa %s!"):format(bestRec.AreaId))
 
-            tpTo(areaPos)
-
-            -- Hintayin matapos
             local rdStart = os.clock()
             while isRagdolled() and (os.clock() - rdStart) < 5 do
                 if not State.running then return false end
-                task.wait(0.05)
+                task.wait(0.1)
             end
-
-            warn("[CHICKEN] Tapos na ragdoll")
             return true
         end
 
@@ -330,7 +345,9 @@ local function waitForRagdollAndTP(bestRec, bestValue, timeout)
     return false
 end
 
--- ============ FORMAT ============
+-- ============================================================
+-- FORMAT NUMBER
+-- ============================================================
 local function formatNumber(n)
     n = tonumber(n) or 0
     local units = {{1e12,"T"},{1e9,"B"},{1e6,"M"},{1e3,"K"}}
@@ -343,52 +360,12 @@ local function formatNumber(n)
     return tostring(math.round(n))
 end
 
--- ============ HOLD ============
-local function startHold()
-    if State.holdThread then
-        pcall(task.cancel, State.holdThread)
-        State.holdThread = nil
-    end
-
-    State.holdThread = task.spawn(function()
-        while State.running do
-            task.wait(0.5)
-            if not State.running then break end
-            if not State.targetPos then break end
-
-            local hrp = getHRP()
-            if not hrp then
-                task.wait(0.5)
-                continue
-            end
-
-            if not isAlive() then
-                task.wait(1)
-                continue
-            end
-
-            local dist = (hrp.Position - State.targetPos).Magnitude
-            if dist > 30 then
-                if os.clock() - (State.lastReTP or 0) > 0.3 then
-                    State.lastReTP = os.clock()
-                    tpTo(State.targetPos)
-                end
-            end
-        end
-    end)
-end
-
-local function stopHold()
-    if State.holdThread then
-        pcall(task.cancel, State.holdThread)
-        State.holdThread = nil
-    end
-end
-
--- ============ MAIN FLOW ============
+-- ============================================================
+-- MAIN FLOW
+-- ============================================================
 local function mainFlow()
     State.running = true
-    warn("=== CHICKEN RAGDOLL → TP AGAD → STAY ===")
+    warn("=== CHICKEN RAGDOLL → MOVETWEEN 350 → STAY ===")
 
     if not loadModules() then
         warn("[FLOW] Modules not loaded!")
@@ -396,14 +373,8 @@ local function mainFlow()
         return
     end
 
-    -- STEP 1: TP sa Forest
-    warn("[FLOW] STEP 1: TP sa Forest...")
-    tpTo(State.chickenTP)
-    task.wait(0.5)
-    if not State.running then return end
-
-    -- STEP 2: Hanapin chicken egg
-    warn("[FLOW] STEP 2: Hanapin chicken egg...")
+    -- STEP 1: Hanapin chicken egg
+    warn("[FLOW] STEP 1: Hanapin chicken egg...")
     local chicken = findChickenEgg()
     if not chicken then
         warn("[FLOW] Walang chicken egg!")
@@ -411,11 +382,11 @@ local function mainFlow()
         return
     end
 
-    -- STEP 3: TP sa chicken egg, grab
+    -- STEP 2: MoveTween sa chicken egg
     local cpos = getEggPos(chicken)
     if cpos then
-        warn("[FLOW] TP sa chicken egg...")
-        tpTo(cpos)
+        warn("[FLOW] MoveTween 350 sa chicken egg...")
+        fastTweenTo(cpos, 10, function() return State.running end)
         task.wait(0.3)
 
         warn("[FLOW] Grab chicken egg...")
@@ -426,8 +397,8 @@ local function mainFlow()
         task.wait(0.3)
     end
 
-    -- STEP 4: Find best egg
-    warn("[FLOW] STEP 4: Hanapin best egg...")
+    -- STEP 3: Hanapin best egg
+    warn("[FLOW] STEP 3: Hanapin best egg...")
     local best, bestValue = findBestEgg()
     if not best then
         warn("[FLOW] Walang best egg!")
@@ -438,27 +409,36 @@ local function mainFlow()
     warn(("[FLOW] Best: %s /s (%s)"):format(
         formatNumber(bestValue), best.AreaId))
 
-    -- STEP 5: Wait ragdoll + TP
-    warn("[FLOW] STEP 5: Hintayin ma-ragdoll AT TP AGAD...")
-    local success = waitForRagdollAndTP(best, bestValue, State.ragdollWait)
+    -- STEP 4: Hintayin ma-ragdoll
+    warn("[FLOW] STEP 4: Hintayin ma-ragdoll...")
+    local hit = waitForRagdoll(State.ragdollWait)
 
-    if not success then
+    if not hit then
         warn("[FLOW] Walang ragdoll")
         State.running = false
         return
     end
 
-    -- STEP 6: Hold
-    task.wait(0.5)
-    startHold()
-    warn("[HOLD] Hold started")
+    -- STEP 5: MoveTween sa best egg area
+    local areaPos = getAreaCenter(best.AreaId) or getEggPos(best)
+    if areaPos then
+        State.targetArea = best.AreaId
+        State.targetPos = areaPos
 
-    warn(("=== TAPOS — NASA %s AREA NA ==="):format(best.AreaId))
-    ui.Status2.Text = ("✅ %s — HOLDING"):format(best.AreaId)
-    ui.Status2.TextColor3 = COLORS.GREEN
+        warn(("[FLOW] MoveTween 350 sa %s..."):format(best.AreaId))
+        fastTweenTo(areaPos, 30, function() return State.running end)
+    end
+
+    -- STEP 6: STAY
+    warn(("=== TAPOS — NASA %s AREA NA, STAY ==="):format(best.AreaId))
+    ui.Status.Text = ("✅ %s — STAY"):format(best.AreaId)
+    ui.Status.TextColor3 = COLORS.GREEN
+    State.running = false
 end
 
--- ============ UI ============
+-- ============================================================
+-- UI
+-- ============================================================
 local COLORS = {
     BG = Color3.fromRGB(25, 25, 30),
     TITLE_BG = Color3.fromRGB(35, 35, 42),
@@ -512,7 +492,7 @@ local function createUI()
     Title.Size = UDim2.new(1, -50, 1, 0)
     Title.Position = UDim2.new(0, 12, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "🐔 Chicken Ragdoll → Best Area"
+    Title.Text = "🐔 Chicken Ragdoll → MoveTween"
     Title.TextColor3 = COLORS.GOLD
     Title.TextSize = 13
     Title.Font = Enum.Font.GothamBold
@@ -528,11 +508,12 @@ local function createUI()
     CloseBtn.Font = Enum.Font.GothamBold
     Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
 
+    -- Toggle
     local lbl = Instance.new("TextLabel", Main)
     lbl.Size = UDim2.new(1, -120, 0, 25)
     lbl.Position = UDim2.new(0, 15, 0, 55)
     lbl.BackgroundTransparency = 1
-    lbl.Text = "🐔 Chicken Ragdoll TP"
+    lbl.Text = "🐔 Chicken → MoveTween"
     lbl.TextColor3 = COLORS.TEXT
     lbl.TextSize = 14
     lbl.Font = Enum.Font.GothamBold
@@ -572,26 +553,26 @@ local function createUI()
     Status.Size = UDim2.new(1, -30, 0, 20)
     Status.Position = UDim2.new(0, 15, 0, 100)
     Status.BackgroundTransparency = 1
-    Status.Text = "Flow: Ragdoll → TP AGAD → Area"
-    Status.TextColor3 = COLORS.CYAN
-    Status.TextSize = 10
+    Status.Text = "Status: Ready"
+    Status.TextColor3 = COLORS.YELLOW
+    Status.TextSize = 11
     Status.Font = Enum.Font.Gotham
     Status.TextXAlignment = Enum.TextXAlignment.Left
 
-    local Status2 = Instance.new("TextLabel", Main)
-    Status2.Size = UDim2.new(1, -30, 0, 20)
-    Status2.Position = UDim2.new(0, 15, 0, 120)
-    Status2.BackgroundTransparency = 1
-    Status2.Text = "Status: Ready"
-    Status2.TextColor3 = COLORS.YELLOW
-    Status2.TextSize = 10
-    Status2.Font = Enum.Font.Gotham
-    Status2.TextXAlignment = Enum.TextXAlignment.Left
+    local Info = Instance.new("TextLabel", Main)
+    Info.Size = UDim2.new(1, -30, 0, 20)
+    Info.Position = UDim2.new(0, 15, 0, 120)
+    Info.BackgroundTransparency = 1
+    Info.Text = "Tween Speed: 350 | Min: 10M"
+    Info.TextColor3 = COLORS.CYAN
+    Info.TextSize = 10
+    Info.Font = Enum.Font.Gotham
+    Info.TextXAlignment = Enum.TextXAlignment.Left
 
     return {
         ScreenGui = ScreenGui, Main = Main,
         track = track, knob = knob, state = state, btn = btn,
-        Status = Status, Status2 = Status2, CloseBtn = CloseBtn
+        Status = Status, Info = Info, CloseBtn = CloseBtn
     }
 end
 
@@ -604,43 +585,38 @@ local function setToggle(on)
     ui.state.TextColor3 = on and COLORS.GREEN or COLORS.RED
 end
 
+-- Chicken flow toggle
 ui.btn.MouseButton1Click:Connect(function()
     if not State.running then
         if not loadModules() then
-            ui.Status2.Text = "❌ EggState not found"
-            ui.Status2.TextColor3 = COLORS.RED
+            ui.Status.Text = "❌ EggState not found"
+            ui.Status.TextColor3 = COLORS.RED
             return
         end
         setToggle(true)
-        ui.Status2.Text = "🐔 Running flow..."
-        ui.Status2.TextColor3 = COLORS.GREEN
+        ui.Status.Text = "🐔 Running flow..."
+        ui.Status.TextColor3 = COLORS.GREEN
         task.spawn(mainFlow)
     else
         State.running = false
         setToggle(false)
-        stopHold()
-        State.targetPos = nil
-        State.targetArea = nil
-        ui.Status2.Text = "Stopped"
-        ui.Status2.TextColor3 = COLORS.YELLOW
+        ui.Status.Text = "Stopped"
+        ui.Status.TextColor3 = COLORS.YELLOW
     end
 end)
 
 ui.CloseBtn.MouseButton1Click:Connect(function()
     State.running = false
-    stopHold()
-    State.targetPos = nil
-    State.targetArea = nil
     ui.ScreenGui:Destroy()
 end)
 
 task.spawn(function()
     task.wait(0.5)
     if loadModules() then
-        ui.Status2.Text = "✅ Ready | Ragdoll → TP AGAD"
-        ui.Status2.TextColor3 = COLORS.GREEN
+        ui.Status.Text = "✅ Ready | MoveTween 350"
+        ui.Status.TextColor3 = COLORS.GREEN
     else
-        ui.Status2.Text = "⚠️ Waiting for game..."
-        ui.Status2.TextColor3 = COLORS.YELLOW
+        ui.Status.Text = "⚠️ Waiting for game..."
+        ui.Status.TextColor3 = COLORS.YELLOW
     end
 end)
