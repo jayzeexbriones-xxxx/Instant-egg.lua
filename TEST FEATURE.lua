@@ -1,6 +1,7 @@
+
 -- ============================================================
--- CHICKEN RAGDOLL → MOVETWEEN → BEST EGG AREA → STAY
--- CloverHub-style manual step (hindi TweenService)
+-- CHICKEN RAGDOLL → FAST MOVETWEEN → STAY
+-- CloverHub-style: KillPartIgnore + 1000 speed
 -- ============================================================
 
 local Players           = game:GetService("Players")
@@ -13,10 +14,10 @@ local LocalPlayer       = Players.LocalPlayer
 -- ============ STATE ============
 local State = {
     running      = false,
-    moveSpeed    = 500,       -- 🎯 MoveTween speed (100-1000)
-    stepCap      = 32,        -- 🎯 Max studs per frame (anti-detect)
+    moveSpeed    = 1000,      -- 🎯 1000 studs/s (CloverHub speed)
+    stepCap      = 32,        -- Max studs per frame
     chickenArea  = "Forest",
-    minValue     = 1e7,       -- 10M minimum
+    minValue     = 1e7,
     ragdollWait  = 20,
     targetArea   = nil,
     targetPos    = nil,
@@ -107,6 +108,70 @@ local function getEggPos(rec)
     end
     return nil
 end
+
+-- ============================================================
+-- 🛡️ KILLPARTIGNORE (CLOVERHUB ANTI-DEATH)
+-- ============================================================
+local function keepKillPartIgnore()
+    local root = getHRP()
+    if root and root:GetAttribute("KillPartIgnore") ~= true then
+        pcall(function() root:SetAttribute("KillPartIgnore", true) end)
+    end
+end
+
+-- Watch kung may nag-reset ng attribute
+local function watchKillPartIgnore(character)
+    task.spawn(function()
+        local root = character and (character:FindFirstChild("HumanoidRootPart")
+            or character:WaitForChild("HumanoidRootPart", 5))
+        if not (root and root:IsA("BasePart")) then return end
+        keepKillPartIgnore()
+        root:GetAttributeChangedSignal("KillPartIgnore"):Connect(function()
+            if root:GetAttribute("KillPartIgnore") ~= true then
+                keepKillPartIgnore()
+            end
+        end)
+    end)
+end
+
+-- Start watching
+if LocalPlayer.Character then watchKillPartIgnore(LocalPlayer.Character) end
+LocalPlayer.CharacterAdded:Connect(watchKillPartIgnore)
+
+-- ============================================================
+-- 🛡️ ANTI-DEATH (Bonus protection)
+-- ============================================================
+local antiDeathConn = nil
+local function startAntiDeath()
+    if antiDeathConn then return end
+    local hum = getHum()
+    if not hum then return end
+    
+    hum.BreakJointsOnDeath = false
+    pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false) end)
+    
+    antiDeathConn = hum.HealthChanged:Connect(function(hp)
+        if hp <= 0 then
+            pcall(function()
+                hum.Health = hum.MaxHealth
+                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end)
+        end
+    end)
+end
+
+local function stopAntiDeath()
+    if antiDeathConn then
+        antiDeathConn:Disconnect()
+        antiDeathConn = nil
+    end
+end
+
+-- Restart anti-death pag respawn
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    startAntiDeath()
+end)
 
 -- ============ GET AREA CENTER ============
 local function getAreaCenter(areaName)
@@ -204,20 +269,19 @@ local function findBestEgg()
 end
 
 -- ============================================================
--- 🎯 CLOVERHUB-STYLE MOVE TWEEN (MANUAL STEP)
--- Hindi TweenService - manual CFrame write with stepCap
+-- 🚀 CLOVERHUB FAST MOVETWEEN (MANUAL STEP)
+-- Speed 1000 + KillPartIgnore active
 -- ============================================================
 local function moveTweenTo(targetPos, speed, timeout, checkFn)
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not char or not hrp then return false, "no character" end
 
-    -- Config
+    -- 🎯 1000 studs/s default
     speed = math.clamp(tonumber(speed) or State.moveSpeed, 100, 1000)
     timeout = timeout or 30
     local stepCap = State.stepCap or 32
 
-    -- Kunin yung final target (Vector3)
     local target = typeof(targetPos) == "Vector3" and targetPos or targetPos.Position
     if not target then return false, "no target" end
 
@@ -225,7 +289,7 @@ local function moveTweenTo(targetPos, speed, timeout, checkFn)
     local lastStep = os.clock()
     local bestDist, lastGain = math.huge, os.clock()
 
-    warn(("[MOVE] Nagsimula - target sa %.0f studs @ %d studs/s"):format(
+    warn(("[MOVE] Target: %.0f studs @ %d studs/s"):format(
         (hrp.Position - target).Magnitude, speed))
 
     while os.clock() - t0 < timeout do
@@ -240,7 +304,7 @@ local function moveTweenTo(targetPos, speed, timeout, checkFn)
             continue
         end
 
-        -- 🎯 Distance check (flat, XZ)
+        -- 🎯 Distance check
         local flat = Vector3.new(target.X - h.Position.X, 0,
                                   target.Z - h.Position.Z)
         local rem = flat.Magnitude
@@ -253,28 +317,29 @@ local function moveTweenTo(targetPos, speed, timeout, checkFn)
         if rem < bestDist - 2 then
             bestDist, lastGain = rem, os.clock()
         elseif os.clock() - lastGain > 1.5 then
-            warn("[MOVE] ⚠️ Stuck - walang progreso")
+            warn("[MOVE] ⚠️ Stuck")
             return false, "blocked"
         end
 
-        -- 🎯 Frame time (capped sa 1/30s)
+        -- 🎯 Frame time (capped)
         local nowT = os.clock()
         local dt = nowT - lastStep
         lastStep = nowT
         if dt > 1 / 30 then dt = 1 / 30 end
         if dt <= 0 then dt = 1 / 60 end
 
-        -- 🎯 KEY LOGIC: manual step + stepCap
+        -- 🎯 Manual step + stepCap
         local step = math.min(speed * dt, stepCap, flat.Magnitude)
         local nextP = h.Position + flat.Unit * step
 
-        -- 🎯 CFrame.lookAt (facing sideways)
+        -- 🎯 CFrame.lookAt + zero velocity
         local facing = Vector3.new(-flat.Unit.Z, 0, flat.Unit.X)
         h.CFrame = CFrame.lookAt(nextP, nextP + facing)
-
-        -- 🎯 Zero velocity (walang spike)
         h.AssemblyLinearVelocity = Vector3.zero
         h.AssemblyAngularVelocity = Vector3.zero
+
+        -- 🛡️ Keep KillPartIgnore active
+        keepKillPartIgnore()
 
         RunService.Heartbeat:Wait()
     end
@@ -356,7 +421,6 @@ local function waitForRagdoll(timeout)
         local ragdolled, signal = isRagdolled()
         if ragdolled then
             warn(("[CHICKEN] ✅ Na-ragdoll! (signal=%s)"):format(tostring(signal)))
-
             local rdStart = os.clock()
             while isRagdolled() and (os.clock() - rdStart) < 5 do
                 if not State.running then return false end
@@ -372,7 +436,7 @@ local function waitForRagdoll(timeout)
     return false
 end
 
--- ============ FORMAT NUMBER ============
+-- ============ FORMAT ============
 local function formatNumber(n)
     n = tonumber(n) or 0
     local units = {{1e12,"T"},{1e9,"B"},{1e6,"M"},{1e3,"K"}}
@@ -388,7 +452,7 @@ end
 -- ============ MAIN FLOW ============
 local function mainFlow()
     State.running = true
-    warn("=== CHICKEN RAGDOLL → MOVETWEEN → STAY ===")
+    warn("=== CHICKEN RAGDOLL → FAST MOVETWEEN (1000) ===")
 
     if not loadModules() then
         warn("[FLOW] Modules not loaded!")
@@ -396,7 +460,11 @@ local function mainFlow()
         return
     end
 
-    -- STEP 1: Hanapin chicken egg
+    -- 🛡️ Start anti-death
+    startAntiDeath()
+    keepKillPartIgnore()
+
+    -- STEP 1: Chicken egg
     warn("[FLOW] STEP 1: Hanapin chicken egg...")
     local chicken = findChickenEgg()
     if not chicken then
@@ -405,13 +473,11 @@ local function mainFlow()
         return
     end
 
-    -- STEP 2: MoveTween sa chicken egg
+    -- STEP 2: MoveTween sa chicken egg (1000 speed)
     local cpos = getEggPos(chicken)
     if cpos then
-        warn("[FLOW] MoveTween sa chicken egg...")
-        moveTweenTo(cpos, State.moveSpeed, 15, function()
-            return State.running
-        end)
+        warn("[FLOW] MoveTween 1000 sa chicken egg...")
+        moveTweenTo(cpos, 1000, 15, function() return State.running end)
         task.wait(0.3)
 
         warn("[FLOW] Grab chicken egg...")
@@ -422,7 +488,7 @@ local function mainFlow()
         task.wait(0.3)
     end
 
-    -- STEP 3: Hanapin best egg
+    -- STEP 3: Best egg
     warn("[FLOW] STEP 3: Hanapin best egg...")
     local best, bestValue = findBestEgg()
     if not best then
@@ -434,7 +500,7 @@ local function mainFlow()
     warn(("[FLOW] Best: %s /s (%s)"):format(
         formatNumber(bestValue), best.AreaId))
 
-    -- STEP 4: Hintayin ma-ragdoll
+    -- STEP 4: Wait ragdoll
     warn("[FLOW] STEP 4: Hintayin ma-ragdoll...")
     local hit = waitForRagdoll(State.ragdollWait)
 
@@ -444,21 +510,18 @@ local function mainFlow()
         return
     end
 
-    -- STEP 5: MoveTween sa best egg area
+    -- STEP 5: MoveTween 1000 sa best egg area
     local areaPos = getAreaCenter(best.AreaId) or getEggPos(best)
     if areaPos then
         State.targetArea = best.AreaId
         State.targetPos = areaPos
 
-        warn(("[FLOW] MoveTween sa %s (%.0f studs) @ %d studs/s..."):format(
-            best.AreaId, (getHRP().Position - areaPos).Magnitude, State.moveSpeed))
-        moveTweenTo(areaPos, State.moveSpeed, 60, function()
-            return State.running
-        end)
+        warn(("[FLOW] MoveTween 1000 sa %s (%.0f studs)..."):format(
+            best.AreaId, (getHRP().Position - areaPos).Magnitude))
+        moveTweenTo(areaPos, 1000, 60, function() return State.running end)
     end
 
-    -- STEP 6: STAY
-    warn(("=== TAPOS — NASA %s AREA NA, STAY ==="):format(best.AreaId))
+    warn(("=== TAPOS — NASA %s AREA NA ==="):format(best.AreaId))
     ui.Status2.Text = ("✅ %s — STAY"):format(best.AreaId)
     ui.Status2.TextColor3 = COLORS.GREEN
     State.running = false
@@ -518,7 +581,7 @@ local function createUI()
     Title.Size = UDim2.new(1, -50, 1, 0)
     Title.Position = UDim2.new(0, 12, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "🐔 Chicken Ragdoll → MoveTween"
+    Title.Text = "🐔 Chicken → Fast MoveTween"
     Title.TextColor3 = COLORS.GOLD
     Title.TextSize = 13
     Title.Font = Enum.Font.GothamBold
@@ -534,7 +597,6 @@ local function createUI()
     CloseBtn.Font = Enum.Font.GothamBold
     Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
 
-    -- Toggle
     local lbl = Instance.new("TextLabel", Main)
     lbl.Size = UDim2.new(1, -120, 0, 25)
     lbl.Position = UDim2.new(0, 15, 0, 50)
@@ -579,7 +641,7 @@ local function createUI()
     Status.Size = UDim2.new(1, -30, 0, 20)
     Status.Position = UDim2.new(0, 15, 0, 90)
     Status.BackgroundTransparency = 1
-    Status.Text = "Speed: 500 studs/s | Step: 32"
+    Status.Text = "⚡ Speed: 1000 studs/s | Step: 32"
     Status.TextColor3 = COLORS.CYAN
     Status.TextSize = 10
     Status.Font = Enum.Font.Gotham
@@ -599,7 +661,7 @@ local function createUI()
     Info.Size = UDim2.new(1, -30, 0, 20)
     Info.Position = UDim2.new(0, 15, 0, 130)
     Info.BackgroundTransparency = 1
-    Info.Text = "Manual step (hindi TweenService)"
+    Info.Text = "🛡️ KillPartIgnore + Anti-Death active"
     Info.TextColor3 = COLORS.GREEN
     Info.TextSize = 9
     Info.Font = Enum.Font.Gotham
@@ -642,13 +704,21 @@ end)
 
 ui.CloseBtn.MouseButton1Click:Connect(function()
     State.running = false
+    stopAntiDeath()
     ui.ScreenGui:Destroy()
+end)
+
+-- Auto-start anti-death
+task.spawn(function()
+    task.wait(1)
+    startAntiDeath()
+    keepKillPartIgnore()
 end)
 
 task.spawn(function()
     task.wait(0.5)
     if loadModules() then
-        ui.Status2.Text = "✅ Ready | MoveTween 500"
+        ui.Status2.Text = "✅ Ready | Speed 1000 + Anti-Death"
         ui.Status2.TextColor3 = COLORS.GREEN
     else
         ui.Status2.Text = "⚠️ Waiting for game..."
