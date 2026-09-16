@@ -1,11 +1,6 @@
 -- ============================================================
--- CHICKEN RAGDOLL → TP BEST EGG AREA → HOLD/STAY
--- Flow:
--- 1. TP sa Forest
--- 2. Grab chicken egg
--- 3. Hintayin ma-RAGDOLL
--- 4. TP sa AREA ng PINAKA-HIGH VALUE egg (≥ 10M)
--- 5. HOLD/STAY — i-reassert yung position, hindi babalik sa Forest
+-- CHICKEN RAGDOLL → TP BEST EGG AREA → CHILL HOLD
+-- Chill hold - hindi nag-spam, hindi namamatay
 -- ============================================================
 
 local Players           = game:GetService("Players")
@@ -23,9 +18,9 @@ local State = {
     minValue     = 1e7,
     chickenTP    = CFrame.new(514, 71, -368),
     ragdollWait  = 20,
-    targetArea   = nil,        -- area na pag-stayan
-    targetPos    = nil,        -- position na i-hold
-    holdConn     = nil,        -- connection para sa hold
+    targetArea   = nil,
+    targetPos    = nil,
+    holdThread   = nil,
 }
 
 local AREA_NAMES = {
@@ -88,6 +83,11 @@ end
 local function getHum()
     local c = LocalPlayer.Character
     return c and c:FindFirstChildOfClass("Humanoid")
+end
+
+local function isAlive()
+    local hum = getHum()
+    return hum and hum.Health > 0
 end
 
 local function getRarityNumber(rec)
@@ -189,6 +189,7 @@ end
 
 -- ============ TP ============
 local function tpTo(pos)
+    if not isAlive() then return false end
     local char = LocalPlayer.Character
     local hrp = getHRP()
     if not char or not hrp then return false end
@@ -311,40 +312,49 @@ local function getAreaCenter(areaName)
     return nil
 end
 
--- ============ HOLD POSITION (ANTI-SNAPBACK) ============
-local function startHold()
-    if State.holdConn then
-        State.holdConn:Disconnect()
-        State.holdConn = nil
+-- ============ CHILL HOLD (every 1.5s, hindi spam) ============
+local function startChillHold()
+    if State.holdThread then
+        pcall(task.cancel, State.holdThread)
+        State.holdThread = nil
     end
 
-    State.holdConn = RunService.Heartbeat:Connect(function()
-        if not State.running then return end
-        if not State.targetPos then return end
+    State.holdThread = task.spawn(function()
+        while State.running do
+            task.wait(1.5)   -- ⏱ Every 1.5s lang, hindi spam
 
-        local char = LocalPlayer.Character
-        local hrp = getHRP()
-        if not char or not hrp then return end
+            if not State.running then break end
+            if not State.targetPos then break end
+            if not isAlive() then
+                -- Patay - wait for respawn
+                task.wait(1)
+                continue
+            end
 
-        -- Check kung malayo na sa target (snapback)
-        local dist = (hrp.Position - State.targetPos).Magnitude
+            local hrp = getHRP()
+            if not hrp then
+                task.wait(0.5)
+                continue
+            end
 
-        -- Kung > 50 studs → bumalik, i-TP ulit
-        if dist > 50 then
-            if os.clock() - (State.lastReTP or 0) > 1 then
-                State.lastReTP = os.clock()
-                warn(("[HOLD] Snapback detected (%.0f studs) - re-TP sa %s"):format(
+            local dist = (hrp.Position - State.targetPos).Magnitude
+
+            -- 🎯 Mas mataas threshold: 100 studs
+            if dist > 100 then
+                warn(("[HOLD] Nasa %.0f studs layo - re-TP sa %s"):format(
                     dist, State.targetArea or "?"))
-                char:PivotTo(CFrame.new(State.targetPos + Vector3.new(0, 2, 0)))
+                tpTo(State.targetPos)
+            else
+                -- Nasa area pa, keep quiet
             end
         end
     end)
 end
 
-local function stopHold()
-    if State.holdConn then
-        State.holdConn:Disconnect()
-        State.holdConn = nil
+local function stopChillHold()
+    if State.holdThread then
+        pcall(task.cancel, State.holdThread)
+        State.holdThread = nil
     end
 end
 
@@ -352,7 +362,6 @@ end
 local function mainFlow()
     State.running = true
     warn("=== CHICKEN RAGDOLL → BEST EGG AREA START ===")
-    warn(("[CONFIG] Min Value: %s"):format(formatNumber(State.minValue)))
 
     if not loadModules() then
         warn("[FLOW] Modules not loaded!")
@@ -414,7 +423,6 @@ local function mainFlow()
     -- STEP 6: TP sa AREA ng best egg
     local areaPos = getAreaCenter(best.AreaId)
     if not areaPos then
-        warn("[FLOW] Walang area bounds - gamitin egg position")
         areaPos = getEggPos(best)
     end
 
@@ -425,24 +433,22 @@ local function mainFlow()
         warn(("[FLOW] TP sa %s area (%.0f, %.0f, %.0f)..."):format(
             best.AreaId, areaPos.X, areaPos.Y, areaPos.Z))
 
-        -- TP multiple times para sure
-        for i = 1, 3 do
-            tpTo(areaPos)
-            task.wait(0.2)
-        end
+        -- TP one time lang, hindi spam
+        tpTo(areaPos)
+        task.wait(0.5)
 
-        -- Start hold para hindi bumalik
-        startHold()
-        warn("[HOLD] Position hold started")
+        -- Start chill hold
+        startChillHold()
+        warn("[HOLD] Chill hold started (every 1.5s check)")
     end
 
     -- STEP 7: STAY — tapos na
-    warn(("=== TAPOS — NASA %s AREA NA, HOLDING POSITION ==="):format(best.AreaId))
-    ui.Status2.Text = ("✅ %s — HOLDING"):format(best.AreaId)
+    warn(("=== TAPOS — NASA %s AREA NA, STAY ==="):format(best.AreaId))
+    ui.Status2.Text = ("✅ %s — STAY"):format(best.AreaId)
     ui.Status2.TextColor3 = COLORS.GREEN
 
-    -- ⚠️ State.running = true pa rin — para tuloy yung hold
-    -- I-toggle OFF mo para i-stop
+    -- ⚠️ State.running = true pa rin - para tuloy yung hold
+    -- I-toggle OFF para i-stop
 end
 
 -- ============ UI ============
@@ -605,7 +611,7 @@ ui.btn.MouseButton1Click:Connect(function()
     else
         State.running = false
         setToggle(false)
-        stopHold()
+        stopChillHold()
         State.targetPos = nil
         State.targetArea = nil
         ui.Status2.Text = "Stopped"
@@ -615,7 +621,7 @@ end)
 
 ui.CloseBtn.MouseButton1Click:Connect(function()
     State.running = false
-    stopHold()
+    stopChillHold()
     State.targetPos = nil
     State.targetArea = nil
     ui.ScreenGui:Destroy()
