@@ -1,6 +1,11 @@
 -- ============================================================
--- AUTO GRAB HIGH VALUE EGG — 150M+ ONLY
--- Pinaka-mataas na value lang (≥ 150 Million /s)
+-- AUTO GRAB — HIGHEST FIRST, THEN DESCENDING
+-- Step 1: 1B → grab
+-- Step 2: 500M → grab
+-- Step 3: 100M → grab
+-- Step 4: 50M → grab
+-- Step 5: Wait pag wala nang ≥ 50M
+-- Step 6: Pag may bagong 1B → grab ulit
 -- ============================================================
 
 local Players           = game:GetService("Players")
@@ -13,10 +18,10 @@ local LocalPlayer       = Players.LocalPlayer
 local State = {
     running      = false,
     minArea      = 10,
-    minValue     = 1.5e8,    -- 💰 150 MILLION minimum
-    checkDelay   = 0.05,
-    grabCooldown = 1,
-    postGrabWait = 0.1,
+    minValue     = 5e7,       -- 50M minimum
+    checkDelay   = 0.1,       -- check every 0.1s
+    grabCooldown = 2,         -- 2s bago i-retry same egg
+    postGrabWait = 0.3,       -- 0.3s bago next grab
 }
 
 local AREA_NAMES = {
@@ -130,14 +135,13 @@ local function calcEggValue(rec)
     return math.max(1, math.round(value))
 end
 
--- ============ FIND HIGHEST VALUE EGG (≥ 150M) ============
-local function findHighestValueEgg()
-    if not EggState then return nil, 0 end
+-- ============ FIND ALL EGGS (≥ 50M) sorted highest first ============
+local function findAllHighValueEggs()
+    if not EggState then return {} end
     local ok, fieldEggs = pcall(function() return EggState.ReadFieldEggs() end)
-    if not ok or not fieldEggs or not fieldEggs.Records then return nil, 0 end
+    if not ok or not fieldEggs or not fieldEggs.Records then return {} end
 
-    local bestRec = nil
-    local bestValue = 0
+    local eggs = {}
 
     for _, rec in ipairs(fieldEggs.Records) do
         if rec.State == "Slot" or rec.State == "Dropped" then
@@ -148,16 +152,16 @@ local function findHighestValueEgg()
 
             if areaIdx and areaIdx >= State.minArea then
                 local value = calcEggValue(rec)
-                -- 💰 FILTER: ≥ 150M lang
-                if value >= State.minValue and value > bestValue then
-                    bestValue = value
-                    bestRec = rec
+                if value >= State.minValue then
+                    eggs[#eggs + 1] = { rec = rec, value = value }
                 end
             end
         end
     end
 
-    return bestRec, bestValue
+    -- 🎯 SORT: highest value FIRST
+    table.sort(eggs, function(a, b) return a.value > b.value end)
+    return eggs
 end
 
 -- ============ FAST GRAB ============
@@ -214,9 +218,10 @@ end
 -- ============ MAIN LOOP ============
 local function mainLoop()
     State.running = true
-    warn("=== HIGH VALUE AUTO GRAB START (150M+) ===")
+    warn("=== AUTO GRAB START (Highest First, Descending) ===")
+    warn(("[CONFIG] Min: %s /s"):format(formatNumber(State.minValue)))
 
-    local lastGrabbed = {}
+    local lastGrabbed = {}    -- uid → tick() ng last grab attempt
     local grabCount = 0
 
     while State.running do
@@ -228,23 +233,50 @@ local function mainLoop()
             continue
         end
 
-        local rec, value = findHighestValueEgg()
-        if rec and value >= State.minValue then
-            local lastTime = lastGrabbed[rec.Uid]
-            if not lastTime or (tick() - lastTime) > State.grabCooldown then
-                lastGrabbed[rec.Uid] = tick()
+        -- STEP 1: Hanapin LAHAT ng ≥ 50M, sorted highest first
+        local eggs = findAllHighValueEggs()
 
-                local ok, method = fastGrabEgg(rec)
-                if ok then
-                    grabCount = grabCount + 1
-                    warn(("[GRAB #%d] ✅ %s | %s /s | %s | %s"):format(
-                        grabCount, rec.AreaId, formatNumber(value), method, rec.Uid))
+        if #eggs > 0 then
+            -- STEP 2-4: Grab bawat isa, highest first, descending
+            local grabbed = false
+            for _, item in ipairs(eggs) do
+                if not State.running then break end
+
+                local rec = item.rec
+                local value = item.value
+                local lastTime = lastGrabbed[rec.Uid]
+
+                -- Skip kung kaka-grab lang nito (cooldown)
+                if not lastTime or (tick() - lastTime) > State.grabCooldown then
+                    lastGrabbed[rec.Uid] = tick()
+
+                    warn(("[TARGET] %s /s (%s) — grabbing"):format(
+                        formatNumber(value), rec.AreaId))
+
+                    local ok, method = fastGrabEgg(rec)
+                    if ok then
+                        grabCount = grabCount + 1
+                        warn(("[GRAB #%d] ✅ %s | %s /s | %s"):format(
+                            grabCount, rec.AreaId, formatNumber(value), method))
+                        grabbed = true
+                        -- Break para sa next cycle — hindi mag-rush
+                        break
+                    end
+
+                    task.wait(State.postGrabWait)
                 end
-
-                task.wait(State.postGrabWait)
             end
+
+            -- STEP 5: Kung wala nang nagrab this cycle, wait lang
+            if not grabbed then
+                task.wait(0.3)
+            end
+        else
+            -- STEP 5: Wala nang ≥ 50M → WAIT
+            task.wait(0.5)
         end
 
+        -- Cleanup old entries every 50 grabs
         if grabCount % 50 == 0 then
             local now = tick()
             for uid, t in pairs(lastGrabbed) do
@@ -253,7 +285,7 @@ local function mainLoop()
         end
     end
 
-    warn("=== HIGH VALUE AUTO GRAB STOP ===")
+    warn("=== AUTO GRAB STOP ===")
 end
 
 -- ============ UI ============
@@ -268,6 +300,7 @@ local COLORS = {
     TRACK_OFF = Color3.fromRGB(70, 70, 80),
     YELLOW = Color3.fromRGB(255, 200, 0),
     GOLD = Color3.fromRGB(255, 215, 0),
+    CYAN = Color3.fromRGB(80, 200, 255),
 }
 
 local function createUI()
@@ -281,8 +314,8 @@ local function createUI()
     ScreenGui.Parent = CoreGui
 
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 290, 0, 175)
-    Main.Position = UDim2.new(0.5, -145, 0.5, -87)
+    Main.Size = UDim2.new(0, 300, 0, 210)
+    Main.Position = UDim2.new(0.5, -150, 0.5, -105)
     Main.BackgroundColor3 = COLORS.BG
     Main.BorderSizePixel = 0
     Main.Active = true
@@ -309,7 +342,7 @@ local function createUI()
     Title.Size = UDim2.new(1, -50, 1, 0)
     Title.Position = UDim2.new(0, 12, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "💰 Auto Grab 150M+"
+    Title.Text = "💰 Auto Grab — Highest First"
     Title.TextColor3 = COLORS.GOLD
     Title.TextSize = 13
     Title.Font = Enum.Font.GothamBold
@@ -325,11 +358,12 @@ local function createUI()
     CloseBtn.Font = Enum.Font.GothamBold
     Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
 
+    -- Toggle
     local lbl = Instance.new("TextLabel", Main)
     lbl.Size = UDim2.new(1, -120, 0, 25)
-    lbl.Position = UDim2.new(0, 15, 0, 55)
+    lbl.Position = UDim2.new(0, 15, 0, 50)
     lbl.BackgroundTransparency = 1
-    lbl.Text = "💰 150M+ Only"
+    lbl.Text = "💰 Auto Grab"
     lbl.TextColor3 = COLORS.TEXT
     lbl.TextSize = 14
     lbl.Font = Enum.Font.GothamBold
@@ -337,7 +371,7 @@ local function createUI()
 
     local state = Instance.new("TextLabel", Main)
     state.Size = UDim2.new(0, 45, 0, 25)
-    state.Position = UDim2.new(1, -120, 0, 55)
+    state.Position = UDim2.new(1, -120, 0, 50)
     state.BackgroundTransparency = 1
     state.Text = "OFF"
     state.TextColor3 = COLORS.RED
@@ -347,7 +381,7 @@ local function createUI()
 
     local track = Instance.new("Frame", Main)
     track.Size = UDim2.new(0, 50, 0, 26)
-    track.Position = UDim2.new(1, -65, 0, 55)
+    track.Position = UDim2.new(1, -65, 0, 50)
     track.BackgroundColor3 = COLORS.TRACK_OFF
     track.BorderSizePixel = 0
     Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
@@ -361,25 +395,36 @@ local function createUI()
 
     local btn = Instance.new("TextButton", Main)
     btn.Size = UDim2.new(0, 110, 0, 36)
-    btn.Position = UDim2.new(1, -120, 0, 50)
+    btn.Position = UDim2.new(1, -120, 0, 45)
     btn.BackgroundTransparency = 1
     btn.Text = ""
 
+    -- Info lines
     local InfoLbl = Instance.new("TextLabel", Main)
     InfoLbl.Size = UDim2.new(1, -30, 0, 18)
-    InfoLbl.Position = UDim2.new(0, 15, 0, 90)
+    InfoLbl.Position = UDim2.new(0, 15, 0, 85)
     InfoLbl.BackgroundTransparency = 1
-    InfoLbl.Text = "Best: -- /s"
-    InfoLbl.TextColor3 = COLORS.GOLD
+    InfoLbl.Text = "🎯 Next: --"
+    InfoLbl.TextColor3 = COLORS.CYAN
     InfoLbl.TextSize = 11
     InfoLbl.Font = Enum.Font.GothamBold
     InfoLbl.TextXAlignment = Enum.TextXAlignment.Left
 
+    local QueueLbl = Instance.new("TextLabel", Main)
+    QueueLbl.Size = UDim2.new(1, -30, 0, 18)
+    QueueLbl.Position = UDim2.new(0, 15, 0, 103)
+    QueueLbl.BackgroundTransparency = 1
+    QueueLbl.Text = "📋 Queue: 0 eggs"
+    QueueLbl.TextColor3 = COLORS.YELLOW
+    QueueLbl.TextSize = 11
+    QueueLbl.Font = Enum.Font.Gotham
+    QueueLbl.TextXAlignment = Enum.TextXAlignment.Left
+
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -30, 0, 18)
-    Status.Position = UDim2.new(0, 15, 0, 110)
+    Status.Position = UDim2.new(0, 15, 0, 123)
     Status.BackgroundTransparency = 1
-    Status.Text = "Min: 150.00M /s"
+    Status.Text = "Min: 50.00M | Highest First"
     Status.TextColor3 = COLORS.YELLOW
     Status.TextSize = 10
     Status.Font = Enum.Font.Gotham
@@ -387,19 +432,29 @@ local function createUI()
 
     local Stats = Instance.new("TextLabel", Main)
     Stats.Size = UDim2.new(1, -30, 0, 18)
-    Stats.Position = UDim2.new(0, 15, 0, 130)
+    Stats.Position = UDim2.new(0, 15, 0, 143)
     Stats.BackgroundTransparency = 1
-    Stats.Text = "Grabbed: 0"
+    Stats.Text = "✅ Grabbed: 0"
     Stats.TextColor3 = COLORS.GREEN
     Stats.TextSize = 10
-    Stats.Font = Enum.Font.Gotham
+    Stats.Font = Enum.Font.GothamBold
     Stats.TextXAlignment = Enum.TextXAlignment.Left
+
+    local LastLbl = Instance.new("TextLabel", Main)
+    LastLbl.Size = UDim2.new(1, -30, 0, 18)
+    LastLbl.Position = UDim2.new(0, 15, 0, 163)
+    LastLbl.BackgroundTransparency = 1
+    LastLbl.Text = "Last: --"
+    LastLbl.TextColor3 = COLORS.GREEN
+    LastLbl.TextSize = 10
+    LastLbl.Font = Enum.Font.Gotham
+    LastLbl.TextXAlignment = Enum.TextXAlignment.Left
 
     return {
         ScreenGui = ScreenGui, Main = Main,
         track = track, knob = knob, state = state, btn = btn,
-        Status = Status, InfoLbl = InfoLbl, Stats = Stats,
-        CloseBtn = CloseBtn
+        Status = Status, InfoLbl = InfoLbl, QueueLbl = QueueLbl,
+        Stats = Stats, LastLbl = LastLbl, CloseBtn = CloseBtn
     }
 end
 
@@ -412,16 +467,21 @@ local function setToggle(on)
     ui.state.TextColor3 = on and COLORS.GREEN or COLORS.RED
 end
 
--- Live info update
+-- Live info update (para makita mo yung queue in real-time)
 task.spawn(function()
+    local lastGrabbedInfo = "--"
     while true do
         task.wait(0.5)
         if State.running then
-            local rec, value = findHighestValueEgg()
-            if rec and value > 0 then
-                ui.InfoLbl.Text = ("Best: %s /s (%s)"):format(formatNumber(value), rec.AreaId)
+            local eggs = findAllHighValueEggs()
+            if #eggs > 0 then
+                local top = eggs[1]
+                ui.InfoLbl.Text = ("🎯 Next: %s /s (%s)"):format(
+                    formatNumber(top.value), top.rec.AreaId)
+                ui.QueueLbl.Text = ("📋 Queue: %d eggs (descending)"):format(#eggs)
             else
-                ui.InfoLbl.Text = "Best: -- /s"
+                ui.InfoLbl.Text = "🎯 Next: -- (waiting)"
+                ui.QueueLbl.Text = "📋 Queue: 0 eggs"
             end
         end
     end
@@ -436,7 +496,7 @@ ui.btn.MouseButton1Click:Connect(function()
             return
         end
         setToggle(true)
-        ui.Status.Text = "Min: 150.00M /s"
+        ui.Status.Text = "Min: 50.00M | Highest First"
         ui.Status.TextColor3 = COLORS.GREEN
         task.spawn(mainLoop)
     else
@@ -456,7 +516,7 @@ end)
 task.spawn(function()
     task.wait(0.5)
     if loadModules() then
-        ui.Status.Text = "✅ Ready | Min: 150.00M /s"
+        ui.Status.Text = "✅ Ready | Min: 50.00M"
         ui.Status.TextColor3 = COLORS.GREEN
     else
         ui.Status.Text = "⚠️ Waiting for game..."
