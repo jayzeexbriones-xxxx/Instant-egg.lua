@@ -1,11 +1,11 @@
 -- ============================================================
--- CHICKEN RAGDOLL → TP BEST EGG AREA → STAY
+-- CHICKEN RAGDOLL → TP BEST EGG AREA → HOLD/STAY
 -- Flow:
 -- 1. TP sa Forest
 -- 2. Grab chicken egg
 -- 3. Hintayin ma-RAGDOLL
 -- 4. TP sa AREA ng PINAKA-HIGH VALUE egg (≥ 10M)
--- 5. STAY — hindi na grab, tambay lang
+-- 5. HOLD/STAY — i-reassert yung position, hindi babalik sa Forest
 -- ============================================================
 
 local Players           = game:GetService("Players")
@@ -23,6 +23,9 @@ local State = {
     minValue     = 1e7,
     chickenTP    = CFrame.new(514, 71, -368),
     ragdollWait  = 20,
+    targetArea   = nil,        -- area na pag-stayan
+    targetPos    = nil,        -- position na i-hold
+    holdConn     = nil,        -- connection para sa hold
 }
 
 local AREA_NAMES = {
@@ -162,7 +165,7 @@ local function findChickenEgg()
     return nil
 end
 
--- ============ FIND BEST EGG (HIGHEST VALUE) ============
+-- ============ FIND BEST EGG ============
 local function findBestEgg()
     if not EggState then return nil end
     local ok, fieldEggs = pcall(function() return EggState.ReadFieldEggs() end)
@@ -292,7 +295,6 @@ local function formatNumber(n)
 end
 
 -- ============ GET AREA CENTER ============
--- Hanapin yung area bounds para makuha yung gitna
 local function getAreaCenter(areaName)
     local ok, area = pcall(function()
         return Workspace.__OBJECTS.Areas.GuardAreas[areaName]
@@ -302,7 +304,6 @@ local function getAreaCenter(areaName)
         if bounds and bounds:IsA("BasePart") then
             return bounds.Position
         end
-        -- Fallback: gamitin yung area model position
         if area.PrimaryPart then
             return area.PrimaryPart.Position
         end
@@ -310,7 +311,44 @@ local function getAreaCenter(areaName)
     return nil
 end
 
--- ============ MAIN FLOW (ONE-TIME, STAY) ============
+-- ============ HOLD POSITION (ANTI-SNAPBACK) ============
+local function startHold()
+    if State.holdConn then
+        State.holdConn:Disconnect()
+        State.holdConn = nil
+    end
+
+    State.holdConn = RunService.Heartbeat:Connect(function()
+        if not State.running then return end
+        if not State.targetPos then return end
+
+        local char = LocalPlayer.Character
+        local hrp = getHRP()
+        if not char or not hrp then return end
+
+        -- Check kung malayo na sa target (snapback)
+        local dist = (hrp.Position - State.targetPos).Magnitude
+
+        -- Kung > 50 studs → bumalik, i-TP ulit
+        if dist > 50 then
+            if os.clock() - (State.lastReTP or 0) > 1 then
+                State.lastReTP = os.clock()
+                warn(("[HOLD] Snapback detected (%.0f studs) - re-TP sa %s"):format(
+                    dist, State.targetArea or "?"))
+                char:PivotTo(CFrame.new(State.targetPos + Vector3.new(0, 2, 0)))
+            end
+        end
+    end)
+end
+
+local function stopHold()
+    if State.holdConn then
+        State.holdConn:Disconnect()
+        State.holdConn = nil
+    end
+end
+
+-- ============ MAIN FLOW ============
 local function mainFlow()
     State.running = true
     warn("=== CHICKEN RAGDOLL → BEST EGG AREA START ===")
@@ -373,26 +411,38 @@ local function mainFlow()
     warn(("[FLOW] Best: %s /s (%s)"):format(
         formatNumber(bestValue), best.AreaId))
 
-    -- STEP 6: TP sa AREA NG BEST EGG (hindi sa egg mismo)
+    -- STEP 6: TP sa AREA ng best egg
     local areaPos = getAreaCenter(best.AreaId)
     if not areaPos then
-        -- Fallback: gamitin yung egg position mismo
         warn("[FLOW] Walang area bounds - gamitin egg position")
         areaPos = getEggPos(best)
     end
 
     if areaPos then
+        State.targetArea = best.AreaId
+        State.targetPos = areaPos
+
         warn(("[FLOW] TP sa %s area (%.0f, %.0f, %.0f)..."):format(
             best.AreaId, areaPos.X, areaPos.Y, areaPos.Z))
-        tpTo(areaPos)
-        task.wait(0.5)
+
+        -- TP multiple times para sure
+        for i = 1, 3 do
+            tpTo(areaPos)
+            task.wait(0.2)
+        end
+
+        -- Start hold para hindi bumalik
+        startHold()
+        warn("[HOLD] Position hold started")
     end
 
-    -- STEP 7: STAY — tapos na, walang grab
-    warn(("=== TAPOS — NASA %s AREA NA, STAY LANG DITO ==="):format(best.AreaId))
-    State.running = false
-    ui.Status2.Text = ("✅ Nasa %s — STAY"):format(best.AreaId)
+    -- STEP 7: STAY — tapos na
+    warn(("=== TAPOS — NASA %s AREA NA, HOLDING POSITION ==="):format(best.AreaId))
+    ui.Status2.Text = ("✅ %s — HOLDING"):format(best.AreaId)
     ui.Status2.TextColor3 = COLORS.GREEN
+
+    -- ⚠️ State.running = true pa rin — para tuloy yung hold
+    -- I-toggle OFF mo para i-stop
 end
 
 -- ============ UI ============
@@ -555,6 +605,9 @@ ui.btn.MouseButton1Click:Connect(function()
     else
         State.running = false
         setToggle(false)
+        stopHold()
+        State.targetPos = nil
+        State.targetArea = nil
         ui.Status2.Text = "Stopped"
         ui.Status2.TextColor3 = COLORS.YELLOW
     end
@@ -562,6 +615,9 @@ end)
 
 ui.CloseBtn.MouseButton1Click:Connect(function()
     State.running = false
+    stopHold()
+    State.targetPos = nil
+    State.targetArea = nil
     ui.ScreenGui:Destroy()
 end)
 
