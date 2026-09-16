@@ -4,8 +4,8 @@
 local speedBypass = {
     RunService = game:GetService("RunService"),
     Players = game:GetService("Players"),
-    speed = 300,       -- default
-    active = false,    -- OFF by default
+    speed = 300,
+    active = false,
 }
 
 function speedBypass:findFunction(nups, linedefined)
@@ -71,7 +71,7 @@ function speedBypass:init()
         hum.WalkSpeed = self.speed
     end)
 
-    print("[SpeedBypass] ✅ Hook installed")
+    print("[SpeedBypass] Hook installed")
     return true
 end
 
@@ -233,7 +233,7 @@ function utility:destroyTraps()
     for _, obj in next, debris:GetChildren() do
         if obj.Name == "PlayerTrap" then
             pcall(function() obj:Destroy() end)
-            print("[AntiTrap] ✅ Destroyed PlayerTrap")
+            print("[AntiTrap] Destroyed PlayerTrap")
         end
     end
 end
@@ -249,7 +249,7 @@ function utility:startAntiTrap()
         table.insert(utility.trapConns, debris.ChildAdded:Connect(function(child)
             if utility.antiTrapEnabled and child.Name == "PlayerTrap" then
                 pcall(function() child:Destroy() end)
-                print("[AntiTrap] ✅ Destroyed new PlayerTrap")
+                print("[AntiTrap] Destroyed new PlayerTrap")
             end
         end))
     end
@@ -435,7 +435,7 @@ function utility:findAllHighValueEggs()
     if not ok or not fieldEggs or not fieldEggs.Records then return {} end
 
     local eggs = {}
-    local minValue = 5e7  -- 50M
+    local minValue = 5e7
     local minArea = 10
 
     for _, rec in ipairs(fieldEggs.Records) do
@@ -531,7 +531,7 @@ function utility:startAutoGrab()
                     if ok then
                         self.autoGrabCount = self.autoGrabCount + 1
                         self.autoGrabLastValue = value
-                        print(("[AutoGrab #%d] ✅ %s /s (%s)"):format(
+                        print(("[AutoGrab #%d] %s /s (%s)"):format(
                             self.autoGrabCount,
                             string.format("%.2fM", value / 1e6),
                             rec.AreaId))
@@ -554,7 +554,7 @@ function utility:stopAutoGrab()
 end
 
 -- ============================================
--- STEP 9: UI (COMPACT + SPEED SLIDER)
+-- STEP 9: UI
 -- ============================================
 local COLORS = {
     BG = Color3.fromRGB(25, 25, 30),
@@ -580,7 +580,6 @@ local function createUI()
     ScreenGui.ResetOnSpawn = false
     ScreenGui.Parent = utility.CoreGui
 
-    -- 🎯 PANEL: 230 x 375 (kasama slider)
     local Main = Instance.new("Frame")
     Main.Size = UDim2.new(0, 230, 0, 375)
     Main.Position = UDim2.new(0.5, -115, 0.5, -187)
@@ -595,7 +594,6 @@ local function createUI()
     local s1 = Instance.new("UIStroke", Main)
     s1.Color = COLORS.STROKE
 
-    -- Title bar
     local TitleBar = Instance.new("Frame", Main)
     TitleBar.Size = UDim2.new(1, 0, 0, 28)
     TitleBar.BackgroundColor3 = COLORS.TITLE_BG
@@ -612,7 +610,7 @@ local function createUI()
     Title.Size = UDim2.new(1, -40, 1, 0)
     Title.Position = UDim2.new(0, 10, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "🥚 Steal An Egg"
+    Title.Text = "Steal An Egg"
     Title.TextColor3 = COLORS.TEXT
     Title.TextSize = 12
     Title.Font = Enum.Font.GothamBold
@@ -622,14 +620,13 @@ local function createUI()
     CloseBtn.Size = UDim2.new(0, 20, 0, 20)
     CloseBtn.Position = UDim2.new(1, -25, 0, 4)
     CloseBtn.BackgroundColor3 = COLORS.RED
-    CloseBtn.Text = "✕"
+    CloseBtn.Text = "X"
     CloseBtn.TextColor3 = COLORS.TEXT
     CloseBtn.TextSize = 12
     CloseBtn.Font = Enum.Font.GothamBold
     local c3 = Instance.new("UICorner", CloseBtn)
     c3.CornerRadius = UDim.new(0, 5)
 
-    -- Compact toggle (40x22)
     local function makeToggle(y, label, icon)
         local lbl = Instance.new("TextLabel", Main)
         lbl.Size = UDim2.new(1, -105, 0, 22)
@@ -676,52 +673,46 @@ local function createUI()
         return {track = track, knob = knob, state = state, btn = btn}
     end
 
-    -- === SPEED SLIDER ===
     local SpeedLabel = Instance.new("TextLabel", Main)
     SpeedLabel.Size = UDim2.new(1, -20, 0, 16)
     SpeedLabel.Position = UDim2.new(0, 12, 0, 38)
     SpeedLabel.BackgroundTransparency = 1
-    SpeedLabel.Text = "⚡ Speed: OFF (16)"
+    SpeedLabel.Text = "Speed: 300 (OFF)"
     SpeedLabel.TextColor3 = COLORS.TEXT
     SpeedLabel.TextSize = 11
     SpeedLabel.Font = Enum.Font.GothamBold
     SpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
 
-    -- Slider track
     local SliderTrack = Instance.new("Frame", Main)
     SliderTrack.Size = UDim2.new(1, -24, 0, 8)
     SliderTrack.Position = UDim2.new(0, 12, 0, 58)
     SliderTrack.BackgroundColor3 = COLORS.SLIDER_BG
     SliderTrack.BorderSizePixel = 0
-    local tc = Instance.new("UICorner", SliderTrack)
-    tc.CornerRadius = UDim.new(1, 0)
+    local tcS = Instance.new("UICorner", SliderTrack)
+    tcS.CornerRadius = UDim.new(1, 0)
 
-    -- Slider fill
     local SliderFill = Instance.new("Frame", SliderTrack)
-    SliderFill.Size = UDim2.new(0.5, 0, 1, 0)   -- default 50% (para sa 300 range)
+    SliderFill.Size = UDim2.new(0.5, 0, 1, 0)
     SliderFill.BackgroundColor3 = COLORS.SLIDER_FILL
     SliderFill.BorderSizePixel = 0
     local fc = Instance.new("UICorner", SliderFill)
     fc.CornerRadius = UDim.new(1, 0)
 
-    -- Slider knob
     local SliderKnob = Instance.new("Frame", SliderTrack)
     SliderKnob.Size = UDim2.new(0, 16, 0, 16)
-    SliderKnob.Position = UDim2.new(0.5, -8, 0.5, -8)   -- center
+    SliderKnob.Position = UDim2.new(0.5, -8, 0.5, -8)
     SliderKnob.BackgroundColor3 = COLORS.KNOB
     SliderKnob.BorderSizePixel = 0
     SliderKnob.ZIndex = 2
-    local kc = Instance.new("UICorner", SliderKnob)
-    kc.CornerRadius = UDim.new(1, 0)
+    local kcS = Instance.new("UICorner", SliderKnob)
+    kcS.CornerRadius = UDim.new(1, 0)
 
-    -- Slider button (invisible overlay for click/drag)
     local SliderBtn = Instance.new("TextButton", SliderTrack)
     SliderBtn.Size = UDim2.new(1, 0, 3, 0)
     SliderBtn.Position = UDim2.new(0, 0, -1, 0)
     SliderBtn.BackgroundTransparency = 1
     SliderBtn.Text = ""
 
-    -- Min/Max labels
     local MinLabel = Instance.new("TextLabel", Main)
     MinLabel.Size = UDim2.new(0, 40, 0, 12)
     MinLabel.Position = UDim2.new(0, 12, 0, 70)
@@ -742,14 +733,12 @@ local function createUI()
     MaxLabel.Font = Enum.Font.Gotham
     MaxLabel.TextXAlignment = Enum.TextXAlignment.Right
 
-    -- Toggles
-    local speedToggle = makeToggle(88, "Speed Bypass", "⚡")
-    local pickupToggle = makeToggle(122, "Instant Pickup", "⚡")
-    local ragdollToggle = makeToggle(156, "Anti-Ragdoll", "🛡️")
-    local antiTrapToggle = makeToggle(190, "Anti-Trap", "🪤")
-    local autoGrabToggle = makeToggle(224, "Auto Grab 50M+", "💰")
+    local speedToggle = makeToggle(88, "Speed Bypass", "[S]")
+    local pickupToggle = makeToggle(122, "Instant Pickup", "[I]")
+    local ragdollToggle = makeToggle(156, "Anti-Ragdoll", "[R]")
+    local antiTrapToggle = makeToggle(190, "Anti-Trap", "[T]")
+    local autoGrabToggle = makeToggle(224, "Auto Grab 50M+", "[$]")
 
-    -- Auto Grab info
     local GrabInfo = Instance.new("TextLabel", Main)
     GrabInfo.Size = UDim2.new(1, -20, 0, 16)
     GrabInfo.Position = UDim2.new(0, 12, 0, 252)
@@ -774,7 +763,7 @@ local function createUI()
     FlowHint.Size = UDim2.new(1, -20, 0, 14)
     FlowHint.Position = UDim2.new(0, 12, 0, 292)
     FlowHint.BackgroundTransparency = 1
-    FlowHint.Text = "💡 1B → 500M → 100M → 50M"
+    FlowHint.Text = "1B -> 500M -> 100M -> 50M"
     FlowHint.TextColor3 = Color3.fromRGB(100, 200, 255)
     FlowHint.TextSize = 9
     FlowHint.Font = Enum.Font.Gotham
@@ -815,34 +804,29 @@ local function setToggle(t, on)
     t.state.TextColor3 = on and COLORS.GREEN or COLORS.RED
 end
 
--- ============================================
 -- SPEED SLIDER LOGIC
--- ============================================
 local SLIDER_MIN = 100
 local SLIDER_MAX = 500
-local currentSliderValue = 300   -- default
 
 local function updateSliderUI(value)
     value = math.clamp(value, SLIDER_MIN, SLIDER_MAX)
-    currentSliderValue = value
 
     local percent = (value - SLIDER_MIN) / (SLIDER_MAX - SLIDER_MIN)
     ui.SliderFill.Size = UDim2.new(percent, 0, 1, 0)
     ui.SliderKnob.Position = UDim2.new(percent, -8, 0.5, -8)
 
     if utility.speedEnabled then
-        ui.SpeedLabel.Text = "⚡ Speed: ON (" .. value .. ")"
+        ui.SpeedLabel.Text = "Speed: ON (" .. value .. ")"
         ui.SpeedLabel.TextColor3 = COLORS.GREEN
     else
-        ui.SpeedLabel.Text = "⚡ Speed: " .. value .. " (OFF)"
+        ui.SpeedLabel.Text = "Speed: " .. value .. " (OFF)"
         ui.SpeedLabel.TextColor3 = COLORS.TEXT
     end
 
-    -- Update speedBypass speed
     speedBypass.speed = value
+    getgenv().config.fastSpeed = value
 end
 
--- Slider drag handler
 local draggingSlider = false
 
 local function updateSliderFromInput(inputX)
@@ -862,3 +846,27 @@ ui.SliderBtn.MouseButton1Down:Connect(function()
 end)
 
 utility.RunService.RenderStepped:Connect(function()
+    if draggingSlider then
+        local mouse = utility.Players.LocalPlayer:GetMouse()
+        updateSliderFromInput(mouse.X)
+    end
+end)
+
+utility.Players.LocalPlayer:GetMouse().Button1Up:Connect(function()
+    draggingSlider = false
+end)
+
+-- Initialize slider default (300)
+updateSliderUI(300)
+
+-- Speed Toggle
+utility.speedEnabled = false
+
+ui.speedToggle.btn.MouseButton1Click:Connect(function()
+    utility.speedEnabled = not utility.speedEnabled
+    setToggle(ui.speedToggle, utility.speedEnabled)
+
+    if utility.speedEnabled then
+        speedBypass.active = true
+        ui.Status.Text = "Speed ON (" .. speedBypass.speed .. ")"
+        ui.Status.TextColor
