@@ -1,12 +1,11 @@
 -- ============================================================
--- CHICKEN RAGDOLL → TP BEST EGG → STAY
+-- CHICKEN RAGDOLL → TP BEST EGG AREA → STAY
 -- Flow:
 -- 1. TP sa Forest
 -- 2. Grab chicken egg
--- 3. Hintayin ma-RAGDOLL (RagdollEndTime attribute)
--- 4. TP sa PINAKA-HIGH VALUE egg (≥ 10M)
--- 5. Grab best egg
--- 6. STAY — tapos na, hindi na babalik
+-- 3. Hintayin ma-RAGDOLL
+-- 4. TP sa AREA ng PINAKA-HIGH VALUE egg (≥ 10M)
+-- 5. STAY — hindi na grab, tambay lang
 -- ============================================================
 
 local Players           = game:GetService("Players")
@@ -20,8 +19,8 @@ local LocalPlayer       = Players.LocalPlayer
 local State = {
     running      = false,
     chickenArea  = "Forest",
-    minArea      = 1,          -- 🎯 ANY AREA (1+)
-    minValue     = 1e7,        -- 🎯 10M minimum
+    minArea      = 1,
+    minValue     = 1e7,
     chickenTP    = CFrame.new(514, 71, -368),
     ragdollWait  = 20,
 }
@@ -174,18 +173,10 @@ local function findBestEgg()
 
     for _, rec in ipairs(fieldEggs.Records) do
         if rec.State == "Slot" or rec.State == "Dropped" then
-            local areaIdx = nil
-            for i, name in ipairs(AREA_NAMES) do
-                if rec.AreaId == name then areaIdx = i break end
-            end
-
-            -- 🎯 Any area (1+), pero ≥ 10M value
-            if areaIdx and areaIdx >= State.minArea then
-                local value = calcEggValue(rec)
-                if value >= State.minValue and value > bestValue then
-                    bestValue = value
-                    bestRec = rec
-                end
+            local value = calcEggValue(rec)
+            if value >= State.minValue and value > bestValue then
+                bestValue = value
+                bestRec = rec
             end
         end
     end
@@ -276,7 +267,7 @@ local function waitForRagdoll(timeout)
                 if not State.running then return false end
                 task.wait(0.1)
             end
-            warn("[CHICKEN] Tapos na ragdoll - TP sa best egg...")
+            warn("[CHICKEN] Tapos na ragdoll - TP sa best egg area...")
             return true
         end
 
@@ -300,12 +291,30 @@ local function formatNumber(n)
     return tostring(math.round(n))
 end
 
--- ============ MAIN FLOW (ONE-TIME) ============
+-- ============ GET AREA CENTER ============
+-- Hanapin yung area bounds para makuha yung gitna
+local function getAreaCenter(areaName)
+    local ok, area = pcall(function()
+        return Workspace.__OBJECTS.Areas.GuardAreas[areaName]
+    end)
+    if ok and area then
+        local bounds = area:FindFirstChild("Bounds")
+        if bounds and bounds:IsA("BasePart") then
+            return bounds.Position
+        end
+        -- Fallback: gamitin yung area model position
+        if area.PrimaryPart then
+            return area.PrimaryPart.Position
+        end
+    end
+    return nil
+end
+
+-- ============ MAIN FLOW (ONE-TIME, STAY) ============
 local function mainFlow()
     State.running = true
-    warn("=== CHICKEN RAGDOLL → BEST EGG START ===")
-    warn(("[CONFIG] Min Value: %s | Min Area: %d"):format(
-        formatNumber(State.minValue), State.minArea))
+    warn("=== CHICKEN RAGDOLL → BEST EGG AREA START ===")
+    warn(("[CONFIG] Min Value: %s"):format(formatNumber(State.minValue)))
 
     if not loadModules() then
         warn("[FLOW] Modules not loaded!")
@@ -350,7 +359,7 @@ local function mainFlow()
     task.wait(0.5)
     if not State.running then return end
 
-    -- STEP 5: Find best egg (highest value ≥ 10M)
+    -- STEP 5: Find best egg
     warn("[FLOW] STEP 5: Hanapin best egg...")
     local best, bestValue = findBestEgg()
     if not best then
@@ -364,25 +373,25 @@ local function mainFlow()
     warn(("[FLOW] Best: %s /s (%s)"):format(
         formatNumber(bestValue), best.AreaId))
 
-    -- STEP 6: TP sa best egg
-    local bpos = getEggPos(best)
-    if bpos then
-        warn("[FLOW] TP sa best egg...")
-        tpTo(bpos)
-        task.wait(0.5)
-
-        -- STEP 7: Grab best egg
-        warn("[FLOW] Grab best egg...")
-        local ok, method = grabEgg(best)
-        if ok then
-            warn(("[FLOW] ✅ Na-grab via %s"):format(method))
-        end
+    -- STEP 6: TP sa AREA NG BEST EGG (hindi sa egg mismo)
+    local areaPos = getAreaCenter(best.AreaId)
+    if not areaPos then
+        -- Fallback: gamitin yung egg position mismo
+        warn("[FLOW] Walang area bounds - gamitin egg position")
+        areaPos = getEggPos(best)
     end
 
-    -- STEP 8: STAY — tapos na
-    warn("=== TAPOS — NASA BEST EGG AREA NA, STAY LANG DITO ===")
+    if areaPos then
+        warn(("[FLOW] TP sa %s area (%.0f, %.0f, %.0f)..."):format(
+            best.AreaId, areaPos.X, areaPos.Y, areaPos.Z))
+        tpTo(areaPos)
+        task.wait(0.5)
+    end
+
+    -- STEP 7: STAY — tapos na, walang grab
+    warn(("=== TAPOS — NASA %s AREA NA, STAY LANG DITO ==="):format(best.AreaId))
     State.running = false
-    ui.Status2.Text = "✅ Nasa best egg — STAY"
+    ui.Status2.Text = ("✅ Nasa %s — STAY"):format(best.AreaId)
     ui.Status2.TextColor3 = COLORS.GREEN
 end
 
@@ -440,7 +449,7 @@ local function createUI()
     Title.Size = UDim2.new(1, -50, 1, 0)
     Title.Position = UDim2.new(0, 12, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "🐔 Chicken Ragdoll → Best Egg"
+    Title.Text = "🐔 Chicken Ragdoll → Best Area"
     Title.TextColor3 = COLORS.GOLD
     Title.TextSize = 13
     Title.Font = Enum.Font.GothamBold
@@ -500,7 +509,7 @@ local function createUI()
     Status.Size = UDim2.new(1, -30, 0, 20)
     Status.Position = UDim2.new(0, 15, 0, 100)
     Status.BackgroundTransparency = 1
-    Status.Text = "Flow: Forest → Ragdoll → Best (10M+)"
+    Status.Text = "Flow: Forest → Ragdoll → Best AREA"
     Status.TextColor3 = COLORS.CYAN
     Status.TextSize = 10
     Status.Font = Enum.Font.Gotham
@@ -559,7 +568,7 @@ end)
 task.spawn(function()
     task.wait(0.5)
     if loadModules() then
-        ui.Status2.Text = "✅ Ready | Min 10M"
+        ui.Status2.Text = "✅ Ready | Forest → Best Area"
         ui.Status2.TextColor3 = COLORS.GREEN
     else
         ui.Status2.Text = "⚠️ Waiting for game..."
