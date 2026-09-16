@@ -4,7 +4,7 @@
 -- 1. TP sa Forest
 -- 2. Grab chicken egg
 -- 3. Hintayin ma-RAGDOLL (RagdollEndTime attribute)
--- 4. TP sa pinaka-high value egg
+-- 4. TP sa PINAKA-HIGH VALUE egg (≥ 10M)
 -- 5. Grab best egg
 -- 6. STAY — tapos na, hindi na babalik
 -- ============================================================
@@ -20,8 +20,8 @@ local LocalPlayer       = Players.LocalPlayer
 local State = {
     running      = false,
     chickenArea  = "Forest",
-    minArea      = 10,
-    minValue     = 5e7,
+    minArea      = 1,          -- 🎯 ANY AREA (1+)
+    minValue     = 1e7,        -- 🎯 10M minimum
     chickenTP    = CFrame.new(514, 71, -368),
     ragdollWait  = 20,
 }
@@ -163,7 +163,7 @@ local function findChickenEgg()
     return nil
 end
 
--- ============ FIND BEST EGG ============
+-- ============ FIND BEST EGG (HIGHEST VALUE) ============
 local function findBestEgg()
     if not EggState then return nil end
     local ok, fieldEggs = pcall(function() return EggState.ReadFieldEggs() end)
@@ -179,6 +179,7 @@ local function findBestEgg()
                 if rec.AreaId == name then areaIdx = i break end
             end
 
+            -- 🎯 Any area (1+), pero ≥ 10M value
             if areaIdx and areaIdx >= State.minArea then
                 local value = calcEggValue(rec)
                 if value >= State.minValue and value > bestValue then
@@ -299,10 +300,12 @@ local function formatNumber(n)
     return tostring(math.round(n))
 end
 
--- ============ MAIN FLOW (ONE-TIME, NO LOOP) ============
+-- ============ MAIN FLOW (ONE-TIME) ============
 local function mainFlow()
     State.running = true
     warn("=== CHICKEN RAGDOLL → BEST EGG START ===")
+    warn(("[CONFIG] Min Value: %s | Min Area: %d"):format(
+        formatNumber(State.minValue), State.minArea))
 
     if not loadModules() then
         warn("[FLOW] Modules not loaded!")
@@ -340,23 +343,21 @@ local function mainFlow()
         task.wait(0.3)
     end
 
-    -- STEP 4: Wait for ragdoll (chicken hit)
+    -- STEP 4: Wait for ragdoll
     warn("[FLOW] STEP 4: Hintayin ma-ragdoll...")
-    local hit = waitForRagdoll(State.ragdollWait)
-
-    if not hit then
-        warn("[FLOW] Walang ragdoll - pero tuloy pa rin")
-    end
+    waitForRagdoll(State.ragdollWait)
 
     task.wait(0.5)
     if not State.running then return end
 
-    -- STEP 5: Find best egg
+    -- STEP 5: Find best egg (highest value ≥ 10M)
     warn("[FLOW] STEP 5: Hanapin best egg...")
     local best, bestValue = findBestEgg()
     if not best then
-        warn("[FLOW] Walang best egg!")
+        warn("[FLOW] Walang best egg (≥ 10M)!")
         State.running = false
+        ui.Status2.Text = "❌ Walang egg ≥ 10M"
+        ui.Status2.TextColor3 = COLORS.RED
         return
     end
 
@@ -378,7 +379,7 @@ local function mainFlow()
         end
     end
 
-    -- STEP 8: STAY — tapos na, walang balikan
+    -- STEP 8: STAY — tapos na
     warn("=== TAPOS — NASA BEST EGG AREA NA, STAY LANG DITO ===")
     State.running = false
     ui.Status2.Text = "✅ Nasa best egg — STAY"
@@ -499,7 +500,7 @@ local function createUI()
     Status.Size = UDim2.new(1, -30, 0, 20)
     Status.Position = UDim2.new(0, 15, 0, 100)
     Status.BackgroundTransparency = 1
-    Status.Text = "Flow: Forest → Ragdoll → Best Egg"
+    Status.Text = "Flow: Forest → Ragdoll → Best (10M+)"
     Status.TextColor3 = COLORS.CYAN
     Status.TextSize = 10
     Status.Font = Enum.Font.Gotham
@@ -558,7 +559,7 @@ end)
 task.spawn(function()
     task.wait(0.5)
     if loadModules() then
-        ui.Status2.Text = "✅ Ready | Forest → Ragdoll → Best"
+        ui.Status2.Text = "✅ Ready | Min 10M"
         ui.Status2.TextColor3 = COLORS.GREEN
     else
         ui.Status2.Text = "⚠️ Waiting for game..."
