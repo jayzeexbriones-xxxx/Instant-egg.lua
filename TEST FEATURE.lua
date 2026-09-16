@@ -651,4 +651,10 @@ end)
 task.spawn(function()
     task.wait(0.5)
     if loadModules() then
-        ui.Status2.Text = "✅ Ready | Ragdoll →
+        ui.Status2.Text = "✅ Ready | Ragdoll → TP AGAD"
+        ui.Status2.TextColor3 = COLORS.GREEN
+    else
+        ui.Status2.Text = "⚠️ Waiting for game..."
+        ui.Status2.TextColor3 = COLORS.YELLOW
+    end
+end)
