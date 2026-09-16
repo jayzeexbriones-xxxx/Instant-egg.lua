@@ -1,7 +1,7 @@
 -- ============================================================
--- CHICKEN HIT (RAGDOLL) → TP BEST EGG
+-- CHICKEN RAGDOLL → TP BEST EGG
 -- Flow:
--- 1. TP sa Forest (chicken area)
+-- 1. TP sa Forest
 -- 2. Grab chicken egg
 -- 3. Hintayin ma-RAGDOLL (chicken hit)
 -- 4. TP sa pinaka-high value egg
@@ -17,12 +17,12 @@ local LocalPlayer       = Players.LocalPlayer
 
 -- ============ STATE ============
 local State = {
-    running        = false,
-    chickenArea    = "Forest",
-    minArea        = 10,
-    minValue       = 5e7,
-    chickenTP      = CFrame.new(514, 71, -368),
-    hitWaitMax     = 15,
+    running      = false,
+    chickenArea  = "Forest",
+    minArea      = 10,
+    minValue     = 5e7,
+    chickenTP    = CFrame.new(514, 71, -368),
+    ragdollWait  = 20,        -- max wait sa ragdoll
 }
 
 local AREA_NAMES = {
@@ -248,7 +248,7 @@ local function grabEgg(rec)
     return false, "no prompt"
 end
 
--- ============ DETECT RAGDOLL ============
+-- ============ RAGDOLL CHECK ============
 local function isRagdolled()
     local hum = getHum()
     if not hum then return false end
@@ -261,8 +261,9 @@ local function isRagdolled()
         or st == Enum.HumanoidStateType.FallingDown
 end
 
+-- ============ WAIT FOR RAGDOLL ============
 local function waitForRagdoll(timeout)
-    warn("[CHICKEN] Hinihintay ma-ragdoll...")
+    warn("[CHICKEN] Hinihintay ma-ragdoll (na-hit ng chicken)...")
     local t0 = os.clock()
 
     while os.clock() - t0 < timeout do
@@ -270,13 +271,13 @@ local function waitForRagdoll(timeout)
 
         if isRagdolled() then
             warn(("[CHICKEN] ✅ Na-ragdoll! (%.2fs)"):format(os.clock() - t0))
-            return true
-        end
-
-        -- Check IsTrapped attribute din
-        local char = LocalPlayer.Character
-        if char and char:GetAttribute("IsTrapped") == true then
-            warn("[CHICKEN] ✅ IsTrapped - na-hit!")
+            -- Hintayin matapos ragdoll (max 3s)
+            local rdStart = os.clock()
+            while isRagdolled() and (os.clock() - rdStart) < 3 do
+                if not State.running then return false end
+                task.wait(0.1)
+            end
+            warn("[CHICKEN] Tapos na ragdoll - TP sa best egg...")
             return true
         end
 
@@ -332,20 +333,25 @@ local function mainFlow()
         warn("[FLOW] TP sa chicken egg...")
         tpTo(cpos)
         task.wait(0.3)
+
         warn("[FLOW] Grab chicken egg...")
-        grabEgg(chicken)
+        local ok, method = grabEgg(chicken)
+        if ok then
+            warn(("[FLOW] ✅ Grabbed via %s"):format(method))
+        end
         task.wait(0.3)
     end
 
     -- STEP 4: Wait for ragdoll (chicken hit)
     warn("[FLOW] STEP 4: Hintayin ma-ragdoll...")
-    local hit = waitForRagdoll(State.hitWaitMax)
+    local hit = waitForRagdoll(State.ragdollWait)
 
     if not hit then
-        warn("[FLOW] Walang ragdoll - tuloy pa rin sa best egg")
+        warn("[FLOW] Walang ragdoll - pero tuloy pa rin sa best egg")
     end
 
     task.wait(0.5)
+    if not State.running then return end
 
     -- STEP 5: Find best egg
     warn("[FLOW] STEP 5: Hanapin best egg...")
@@ -492,7 +498,7 @@ local function createUI()
     Status.Size = UDim2.new(1, -30, 0, 20)
     Status.Position = UDim2.new(0, 15, 0, 100)
     Status.BackgroundTransparency = 1
-    Status.Text = "Flow: Chicken → Ragdoll → Best Egg"
+    Status.Text = "Flow: Forest → Ragdoll → Best Egg"
     Status.TextColor3 = COLORS.CYAN
     Status.TextSize = 10
     Status.Font = Enum.Font.Gotham
@@ -551,7 +557,7 @@ end)
 task.spawn(function()
     task.wait(0.5)
     if loadModules() then
-        ui.Status2.Text = "✅ Ready | Chicken → Ragdoll → Best Egg"
+        ui.Status2.Text = "✅ Ready | Forest → Ragdoll → Best"
         ui.Status2.TextColor3 = COLORS.GREEN
     else
         ui.Status2.Text = "⚠️ Waiting for game..."
