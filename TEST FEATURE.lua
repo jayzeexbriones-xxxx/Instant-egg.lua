@@ -1,5 +1,5 @@
 -- ============================================================
--- 🕊️ FLY HACK — WORKING VERSION
+-- 🕊️ FLY HACK — CFrame-based (Working)
 -- ============================================================
 
 local Players = game:GetService("Players")
@@ -11,12 +11,8 @@ local LocalPlayer = Players.LocalPlayer
 -- ============ STATE ============
 local Fly = {
     enabled = false,
-    speed = 50,              -- Studs per second
-    bodyVelocity = nil,
-    bodyGyro = nil,
+    speed = 2,              -- 🎯 Studs per frame (2 = ~120 studs/s at 60fps)
     conn = nil,
-    hum = nil,
-    hrp = nil,
 }
 
 -- ============ HELPERS ============
@@ -34,47 +30,24 @@ end
 function Fly.start()
     if Fly.enabled then return end
     
-    local char = getChar()
     local hrp = getHRP()
     local hum = getHum()
-    if not char or not hrp or not hum then
+    if not hrp or not hum then
         warn("[FLY] Walang character!")
         return
     end
     
     Fly.enabled = true
-    Fly.hrp = hrp
-    Fly.hum = hum
     
-    -- 1. Setup Humanoid (para hindi mag-collide sa physics)
+    -- Stop humanoid physics (para hindi mag-collide)
     hum.PlatformStand = true
-    hum:ChangeState(Enum.HumanoidStateType.Physics)
     
-    -- 2. BodyVelocity (para sa movement)
-    local bv = Instance.new("BodyVelocity")
-    bv.Name = "FlyBV"
-    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-    bv.Velocity = Vector3.zero
-    bv.P = 1250
-    bv.Parent = hrp
-    Fly.bodyVelocity = bv
-    
-    -- 3. BodyGyro (para sa rotation)
-    local bg = Instance.new("BodyGyro")
-    bg.Name = "FlyBG"
-    bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-    bg.P = 10000
-    bg.D = 100
-    bg.CFrame = hrp.CFrame
-    bg.Parent = hrp
-    Fly.bodyGyro = bg
-    
-    -- 4. Fly loop
-    Fly.conn = RunService.Heartbeat:Connect(function(dt)
+    -- Fly loop via CFrame
+    Fly.conn = RunService.RenderStepped:Connect(function(dt)
         if not Fly.enabled then return end
         
-        local h = Fly.hrp
-        local hm = Fly.hum
+        local h = getHRP()
+        local hm = getHum()
         if not h or not h.Parent or not hm or hm.Health <= 0 then
             Fly.stop()
             return
@@ -87,43 +60,42 @@ function Fly.start()
         local up = Vector3.new(0, 1, 0)
         
         -- Build direction
-        local dir = Vector3.zero
+        local move = Vector3.zero
         
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-            dir = dir + look
+            move = move + look
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-            dir = dir - look
+            move = move - look
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-            dir = dir - right
+            move = move - right
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-            dir = dir + right
+            move = move + right
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-            dir = dir + up
+            move = move + up
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-            dir = dir - up
+            move = move - up
         end
         
-        if dir.Magnitude > 0 then
-            dir = dir.Unit
+        -- Normalize
+        if move.Magnitude > 0 then
+            move = move.Unit
         end
         
-        -- Apply velocity
-        if Fly.bodyVelocity then
-            Fly.bodyVelocity.Velocity = dir * Fly.speed
-        end
+        -- 🎯 CFrame write — direct position update
+        local newPos = h.Position + (move * Fly.speed)
+        h.CFrame = CFrame.new(newPos, newPos + look)
         
-        -- Rotate to camera
-        if Fly.bodyGyro then
-            Fly.bodyGyro.CFrame = cam.CFrame
-        end
+        -- Kill gravity/velocity (para steady)
+        h.AssemblyLinearVelocity = Vector3.zero
+        h.AssemblyAngularVelocity = Vector3.zero
     end)
     
-    print("[FLY] ✅ ON — Speed: " .. Fly.speed .. " studs/s")
+    print("[FLY] ✅ ON — Speed: " .. Fly.speed .. " studs/frame")
 end
 
 -- ============ FLY STOP ============
@@ -136,16 +108,6 @@ function Fly.stop()
         Fly.conn = nil
     end
     
-    if Fly.bodyVelocity then
-        Fly.bodyVelocity:Destroy()
-        Fly.bodyVelocity = nil
-    end
-    
-    if Fly.bodyGyro then
-        Fly.bodyGyro:Destroy()
-        Fly.bodyGyro = nil
-    end
-    
     local hum = getHum()
     if hum then
         pcall(function()
@@ -153,9 +115,6 @@ function Fly.stop()
             hum:ChangeState(Enum.HumanoidStateType.GettingUp)
         end)
     end
-    
-    Fly.hrp = nil
-    Fly.hum = nil
     
     print("[FLY] ❌ OFF")
 end
@@ -282,7 +241,7 @@ local function createUI()
     Info1.Size = UDim2.new(1, -24, 0, 16)
     Info1.Position = UDim2.new(0, 12, 0, 78)
     Info1.BackgroundTransparency = 1
-    Info1.Text = "⚡ Speed: 50 studs/s"
+    Info1.Text = "⚡ Speed: 2 studs/frame"
     Info1.TextColor3 = COLORS.CYAN
     Info1.TextSize = 10
     Info1.Font = Enum.Font.Gotham
@@ -292,9 +251,9 @@ local function createUI()
     Info2.Size = UDim2.new(1, -24, 0, 16)
     Info2.Position = UDim2.new(0, 12, 0, 96)
     Info2.BackgroundTransparency = 1
-    Info2.Text = "🎮 WASD + Space (up) + LCtrl (down)"
+    Info2.Text = "🎮 WASD + Space/LCtrl"
     Info2.TextColor3 = COLORS.YELLOW
-    Info2.TextSize = 9
+    Info2.TextSize = 10
     Info2.Font = Enum.Font.Gotham
     Info2.TextXAlignment = Enum.TextXAlignment.Left
     
@@ -343,4 +302,4 @@ ui.CloseBtn.MouseButton1Click:Connect(function()
     ui.ScreenGui:Destroy()
 end)
 
-print("[FLY] ✅ UI ready — click toggle to fly")
+print("[FLY] ✅ CFrame-based Fly UI ready")
