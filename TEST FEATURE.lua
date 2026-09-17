@@ -1,5 +1,5 @@
 -- ============================================================
--- AUTO GRAB — HIGHEST FIRST + ESP LINE TO BEST EGG
+-- AUTO GRAB — HIGHEST FIRST + LONG ESP LINE (10,000 STUDS)
 -- ============================================================
 
 local Players           = game:GetService("Players")
@@ -210,16 +210,18 @@ local function formatNumber(n)
 end
 
 -- ============================================================
--- ESP LINE SYSTEM
+-- ESP LINE SYSTEM (SINGLE LONG LINE — 10,000 STUDS)
 -- ============================================================
 local ESP = {
     line = nil,
     targetPart = nil,
     targetPos = nil,
+    MAX_DISTANCE = 10000, -- 10,000 studs max
 }
 
 local function createESPLine()
     if ESP.line then return end
+    
     local line = Instance.new("Part")
     line.Name = "ESP_BestEggLine"
     line.Anchored = true
@@ -229,8 +231,15 @@ local function createESPLine()
     line.Transparency = 0.3
     line.Color = Color3.fromRGB(255, 215, 0)
     line.Material = Enum.Material.Neon
-    line.Size = Vector3.new(0.15, 0.15, 1)
+    line.Size = Vector3.new(0.2, 0.2, 1)
     line.Parent = Workspace
+    
+    -- SpecialMesh para ma-extend yung haba beyond 2048 studs
+    local mesh = Instance.new("SpecialMesh")
+    mesh.MeshType = Enum.MeshType.Brick
+    mesh.Scale = Vector3.new(1, 1, 1)
+    mesh.Parent = line
+    
     ESP.line = line
 end
 
@@ -255,6 +264,7 @@ local function updateESPLine()
         return
     end
 
+    -- Check kung valid pa yung target
     if ESP.targetPart and not ESP.targetPart.Parent then
         ESP.targetPart = nil
         ESP.targetPos = nil
@@ -264,11 +274,30 @@ local function updateESPLine()
 
     local startPos = hrp.Position
     local endPos = ESP.targetPos
+    local totalDist = (endPos - startPos).Magnitude
+
+    -- I-clamp sa 10,000 studs max
+    if totalDist > ESP.MAX_DISTANCE then
+        local direction = (endPos - startPos).Unit
+        endPos = startPos + direction * ESP.MAX_DISTANCE
+        totalDist = ESP.MAX_DISTANCE
+    end
+
     local midPos = (startPos + endPos) / 2
-    local distance = (endPos - startPos).Magnitude
 
     ESP.line.CFrame = CFrame.new(midPos, endPos)
-    ESP.line.Size = Vector3.new(0.15, 0.15, distance)
+    
+    -- I-set yung size (max 2048 sa standard Part)
+    local safeSize = math.min(totalDist, 2048)
+    ESP.line.Size = Vector3.new(0.2, 0.2, safeSize)
+    
+    -- I-scale yung mesh para umabot sa totalDist
+    local mesh = ESP.line:FindFirstChildOfClass("SpecialMesh")
+    if mesh then
+        local scaleZ = totalDist / safeSize
+        mesh.Scale = Vector3.new(1, 1, scaleZ)
+    end
+    
     ESP.line.Transparency = 0.3
 end
 
