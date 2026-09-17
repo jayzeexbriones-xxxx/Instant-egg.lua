@@ -1,180 +1,108 @@
 -- ============================================================
--- ULTIMATE LAG REMOVER
--- Pader + Trees + Clouds + Moon + Guards + Lahat ng nagpapalag
+-- FPS UNLOCKER (Max Frame Rate)
 -- ============================================================
 
-local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local Lighting = game:GetService("Lighting")
+local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
 
 local player = Players.LocalPlayer
 
 -- ============================================================
 -- SETTINGS
 -- ============================================================
-
--- ITO YUNG MGA HINDI TATANGGALIN (Importante)
-local KEEP_KEYWORDS = {
-    "Ground", "Floor", "Base", "Terrain",
-    "Baseplate", "Platform", "Spawn", "Safe",
-    "Path", "Road", "HumanoidRootPart"
-}
-
--- ITO YUNG MGA TATANGGALIN (Lahat ng nagpapalag)
-local REMOVE_KEYWORDS = {
-    -- Pader at harang
-    "Wall", "Fence", "Barrier", "Border",
-    "Gate", "Door", "Building", "House",
-    
-    -- Puno at halaman
-    "Tree", "Bush", "Plant", "Leaf", "Leaves",
-    "Grass", "Flower", "Rock", "Stone", "Boulder",
-    "Foliage", "Vegetation",
-    
-    -- Kalangitan
-    "Cloud", "Clouds", "Sky", "Atmosphere", "Fog",
-    "Moon", "Sun", "Star", "Stars", "Galaxy",
-    "Nebula", "Aurora",
-    
-    -- Guards at NPC
-    "Guard", "Security", "NPC", "Enemy", "Bot",
-    "Monster", "Creature", "Animal",
-    
-    -- Effects na nagpapalag
-    "Particle", "Smoke", "Fire", "Spark", "Beam",
-    "Trail", "Explosion", "Effect",
-    
-    -- Generic names
-    "Part", "Brick", "Model", "Decal", "Texture",
-    "Mesh", "MeshPart", "Union", "Negate"
-}
+local TARGET_FPS = 240 -- Palitan mo depende sa phone mo:
+                       -- 60 = Normal
+                       -- 120 = Smooth
+                       -- 144 = Very Smooth
+                       -- 240 = Ultra Smooth (kung kaya ng phone mo)
+                       -- 360 = Extreme (kung gaming phone)
 
 -- ============================================================
--- WORKSPACE REMOVER
+-- FPS UNLOCK FUNCTION
 -- ============================================================
-local function RemoveWorkspaceLag()
-    local count = 0
+local function UnlockFPS()
+    -- Method 1: Gamitin yung internal Roblox setting
+    pcall(function()
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+    end)
     
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        
-        -- I-check ang klase ng object
-        local isTarget = obj:IsA("BasePart") 
-            or obj:IsA("Model") 
-            or obj:IsA("Decal") 
-            or obj:IsA("Texture")
-            or obj:IsA("ParticleEmitter")
-            or obj:IsA("Trail")
-            or obj:IsA("Beam")
-            or obj:IsA("Fire")
-            or obj:IsA("Smoke")
-            or obj:IsA("Sparkles")
-            or obj:IsA("Explosion")
-        
-        if isTarget then
-            
-            -- I-check kung KEEP (hindi tatanggalin)
-            local keep = false
-            for _, keyword in pairs(KEEP_KEYWORDS) do
-                if string.find(obj.Name:lower(), keyword:lower()) then
-                    keep = true
-                    break
-                end
-            end
-            
-            -- I-check kung REMOVE (tatanggalin)
-            local remove = false
-            for _, keyword in pairs(REMOVE_KEYWORDS) do
-                if string.find(obj.Name:lower(), keyword:lower()) then
-                    remove = true
-                    break
-                end
-            end
-            
-            -- Tanggalin kung dapat i-remove at hindi dapat i-keep
-            if not keep and remove then
-                if obj:IsA("BasePart") then
-                    obj.Transparency = 1
-                    obj.CanCollide = false
-                    count = count + 1
-                elseif obj:IsA("Decal") or obj:IsA("Texture") then
-                    obj.Transparency = 1
-                    count = count + 1
-                elseif obj:IsA("ParticleEmitter") 
-                    or obj:IsA("Trail") 
-                    or obj:IsA("Beam")
-                    or obj:IsA("Fire")
-                    or obj:IsA("Smoke")
-                    or obj:IsA("Sparkles") then
-                    obj.Enabled = false
-                    count = count + 1
-                elseif obj:IsA("Model") then
-                    for _, part in pairs(obj:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            part.Transparency = 1
-                            part.CanCollide = false
-                        elseif part:IsA("Decal") or part:IsA("Texture") then
-                            part.Transparency = 1
-                        elseif part:IsA("ParticleEmitter") 
-                            or part:IsA("Trail") 
-                            or part:IsA("Beam")
-                            or part:IsA("Fire")
-                            or part:IsA("Smoke")
-                            or part:IsA("Sparkles") then
-                            part.Enabled = false
-                        end
+    -- Method 2: I-set yung Frame Rate Manager
+    pcall(function()
+        local fpsCap = settings().Rendering.FrameRateCap
+        if fpsCap then
+            fpsCap.Value = TARGET_FPS
+        end
+    end)
+    
+    -- Method 3: I-set yung max FPS sa lahat ng possible na lugar
+    pcall(function()
+        for _, v in pairs(getgc()) do
+            if type(v) == "table" then
+                pcall(function()
+                    if v.FrameRateCap then
+                        v.FrameRateCap = TARGET_FPS
                     end
-                    count = count + 1
-                end
+                    if v.MaxFPS then
+                        v.MaxFPS = TARGET_FPS
+                    end
+                end)
             end
         end
-    end
+    end)
     
-    return count
+    -- Method 4: I-disable yung vsync at iba pang limiters
+    pcall(function()
+        if UserInputService.TouchEnabled then
+            -- Mobile settings
+            settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level01
+            settings().Rendering.SavedQualityLevel = Enum.SavedQualitySetting.QualityLevel1
+        end
+    end)
 end
 
 -- ============================================================
--- LIGHTING REMOVER (Ulap, Buwan, Atmosphere)
+-- FPS BOOSTER (Tanggalin lag sa rendering)
 -- ============================================================
-local function RemoveLightingLag()
-    local count = 0
+local function BoostPerformance()
+    -- I-lower yung graphics quality para mas mabilis
+    pcall(function()
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+    end)
     
-    for _, obj in pairs(Lighting:GetDescendants()) do
-        if obj:IsA("Clouds") then
-            obj.Enabled = false
-            count = count + 1
-        elseif obj:IsA("Atmosphere") then
-            obj.Density = 0
-            obj.Haze = 0
-            obj.Glare = 0
-            count = count + 1
-        elseif obj:IsA("Sky") then
-            obj.Parent = nil
-            count = count + 1
-        elseif obj:IsA("BloomEffect") 
-            or obj:IsA("BlurEffect") 
-            or obj:IsA("SunRaysEffect") 
-            or obj:IsA("DepthOfFieldEffect")
-            or obj:IsA("ColorCorrectionEffect") then
-            obj.Enabled = false
-            count = count + 1
+    -- I-disable yung shadows
+    pcall(function()
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = 100000
+        Lighting.Brightness = 0
+    end)
+    
+    -- I-disable yung post-processing effects
+    local Lighting = game:GetService("Lighting")
+    for _, effect in pairs(Lighting:GetChildren()) do
+        if effect:IsA("PostEffect") then
+            effect.Enabled = false
         end
     end
-    
-    return count
 end
+
+-- ============================================================
+-- RUN
+-- ============================================================
+UnlockFPS()
+BoostPerformance()
 
 -- ============================================================
 -- UI
 -- ============================================================
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LagRemoverUI"
+ScreenGui.Name = "FPSUnlockerUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = player:WaitForChild("PlayerGui")
 
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 220, 0, 120)
-Main.Position = UDim2.new(0.5, -110, 0.3, 0)
+Main.Size = UDim2.new(0, 200, 0, 110)
+Main.Position = UDim2.new(0.5, -100, 0.3, 0)
 Main.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 Main.BorderSizePixel = 0
 Main.Active = true
@@ -188,60 +116,72 @@ UICorner.Parent = Main
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.BackgroundColor3 = Color3.fromRGB(35, 35, 42)
-Title.Text = "🚀 Ultimate Lag Remover"
+Title.Text = "⚡ FPS Unlocker"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
-Title.TextSize = 12
+Title.TextSize = 13
 Title.Parent = Main
 
 local TitleCorner = Instance.new("UICorner")
 TitleCorner.CornerRadius = UDim.new(0, 10)
 TitleCorner.Parent = Title
 
-local ToggleBtn = Instance.new("TextButton")
-ToggleBtn.Size = UDim2.new(1, -20, 0, 40)
-ToggleBtn.Position = UDim2.new(0, 10, 0, 40)
-ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-ToggleBtn.Text = "REMOVE ALL LAG: OFF"
-ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleBtn.Font = Enum.Font.GothamBold
-ToggleBtn.TextSize = 12
-ToggleBtn.Parent = Main
-
-local BtnCorner = Instance.new("UICorner")
-BtnCorner.CornerRadius = UDim.new(0, 8)
-BtnCorner.Parent = ToggleBtn
+local FPSLabel = Instance.new("TextLabel")
+FPSLabel.Size = UDim2.new(1, -20, 0, 25)
+FPSLabel.Position = UDim2.new(0, 10, 0, 35)
+FPSLabel.BackgroundTransparency = 1
+FPSLabel.Text = "FPS: 0"
+FPSLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
+FPSLabel.Font = Enum.Font.GothamBold
+FPSLabel.TextSize = 16
+FPSLabel.Parent = Main
 
 local Status = Instance.new("TextLabel")
 Status.Size = UDim2.new(1, -20, 0, 20)
-Status.Position = UDim2.new(0, 10, 0, 90)
+Status.Position = UDim2.new(0, 10, 0, 65)
 Status.BackgroundTransparency = 1
-Status.Text = "Ready"
+Status.Text = "Unlocked: " .. TARGET_FPS .. " FPS"
 Status.TextColor3 = Color3.fromRGB(255, 200, 0)
-Status.TextSize = 10
+Status.TextSize = 11
 Status.Font = Enum.Font.Gotham
 Status.Parent = Main
 
--- ============================================================
--- TOGGLE LOGIC
--- ============================================================
-local isRemoved = false
+local RefreshBtn = Instance.new("TextButton")
+RefreshBtn.Size = UDim2.new(1, -20, 0, 25)
+RefreshBtn.Position = UDim2.new(0, 10, 0, 85)
+RefreshBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+RefreshBtn.Text = "RE-UNLOCK FPS"
+RefreshBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+RefreshBtn.Font = Enum.Font.GothamBold
+RefreshBtn.TextSize = 10
+RefreshBtn.Parent = Main
 
-ToggleBtn.MouseButton1Click:Connect(function()
-    isRemoved = not isRemoved
+local BtnCorner = Instance.new("UICorner")
+BtnCorner.CornerRadius = UDim.new(0, 6)
+BtnCorner.Parent = RefreshBtn
+
+-- ============================================================
+-- FPS COUNTER
+-- ============================================================
+local frameCount = 0
+local lastTime = tick()
+
+RunService.RenderStepped:Connect(function()
+    frameCount = frameCount + 1
+    local currentTime = tick()
     
-    if isRemoved then
-        ToggleBtn.Text = "REMOVE ALL LAG: ON"
-        ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-        Status.Text = "Removing lag objects..."
-        
-        local wsCount = RemoveWorkspaceLag()
-        local lightCount = RemoveLightingLag()
-        
-        Status.Text = "Removed " .. (wsCount + lightCount) .. " objects!"
-    else
-        ToggleBtn.Text = "REMOVE ALL LAG: OFF"
-        ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-        Status.Text = "Rejoin to restore"
+    if currentTime - lastTime >= 1 then
+        FPSLabel.Text = "FPS: " .. frameCount
+        frameCount = 0
+        lastTime = currentTime
     end
+end)
+
+-- ============================================================
+-- REFRESH BUTTON
+-- ============================================================
+RefreshBtn.MouseButton1Click:Connect(function()
+    UnlockFPS()
+    BoostPerformance()
+    Status.Text = "Re-unlocked: " .. TARGET_FPS .. " FPS"
 end)
