@@ -1,21 +1,39 @@
 -- ==========================================
--- UNDERGROUND SCRIPT V3 (Fixed Toggle + Stable)
+-- UNDERGROUND SCRIPT V5 (Manual Trigger + Anti-Death)
 -- ==========================================
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
-local rootPart = character:WaitForChild("HumanoidRootPart")
+
+-- ==========================================
+-- SAFE CHARACTER SETUP (Walang Auto-Execute)
+-- ==========================================
+local character, humanoid, rootPart
+
+local function setupCharacter()
+    character = player.Character
+    if not character then
+        character = player.CharacterAdded:Wait()
+    end
+    
+    humanoid = character:WaitForChild("Humanoid", 10)
+    rootPart = character:WaitForChild("HumanoidRootPart", 10)
+    
+    return humanoid and rootPart
+end
+
+-- I-setup yung character ngayon
+if not setupCharacter() then
+    warn("Hindi mahanap ang Humanoid o RootPart. Script stopped.")
+    return
+end
 
 -- SETTINGS
-local OFFSET = 5 -- Ilang studs pababa?
+local OFFSET = 3 -- 3 studs muna tayo para safe
 local isUnderground = false
-
--- Kuhanin ang Original Y Position
-local originalY = rootPart.Position.Y 
+local originalY = rootPart.Position.Y
 local targetY = originalY - OFFSET
 
 -- ==========================================
@@ -57,6 +75,7 @@ BtnCorner.Parent = ToggleBtn
 -- FUNCTIONS
 -- ==========================================
 local function SetCollision(state)
+    if not character then return end
     for _, part in pairs(character:GetDescendants()) do
         if part:IsA("BasePart") then
             part.CanCollide = state
@@ -65,9 +84,16 @@ local function SetCollision(state)
 end
 
 -- ==========================================
--- TOGGLE LOGIC
+-- TOGGLE LOGIC (Ikaw ang mag-ti-trigger)
 -- ==========================================
 ToggleBtn.MouseButton1Click:Connect(function()
+    if not character or not character.Parent then
+        -- Kung patay ka, wag gawin
+        ToggleBtn.Text = "PATAY KA BRO!"
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+        return
+    end
+
     isUnderground = not isUnderground
     
     if isUnderground then
@@ -76,11 +102,7 @@ ToggleBtn.MouseButton1Click:Connect(function()
         ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
         SetCollision(false)
         
-        -- Disable falling state para hindi mamatay
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
-        
-        -- I-force agad pababa
+        -- I-force pababa (dahan-dahan lang)
         rootPart.CFrame = CFrame.new(rootPart.Position.X, targetY, rootPart.Position.Z)
         rootPart.Velocity = Vector3.new(0, 0, 0)
     else
@@ -89,31 +111,19 @@ ToggleBtn.MouseButton1Click:Connect(function()
         ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
         SetCollision(true)
         
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
-        
         -- Ibalik sa original Y
         rootPart.CFrame = CFrame.new(rootPart.Position.X, originalY, rootPart.Position.Z)
     end
 end)
 
 -- ==========================================
--- MAIN LOOP (Pinaka-importante para hindi umangat)
+-- MAIN LOOP
 -- ==========================================
 RunService.RenderStepped:Connect(function()
-    if isUnderground and character and character.Parent then
+    if isUnderground and character and character.Parent and rootPart then
         local currentPos = rootPart.Position
-        
-        -- I-force yung Y position pababa
         rootPart.CFrame = CFrame.new(currentPos.X, targetY, currentPos.Z)
-        
-        -- I-lock yung velocity para hindi mag-fall o mag-jump
         rootPart.Velocity = Vector3.new(rootPart.Velocity.X, 0, rootPart.Velocity.Z)
-        
-        -- I-set yung Humanoid state sa Running para hindi mag-fall
-        if humanoid.FloorMaterial == Enum.Material.Air then
-            humanoid:ChangeState(Enum.HumanoidStateType.Running)
-        end
     end
 end)
 
@@ -127,6 +137,11 @@ player.CharacterAdded:Connect(function(newChar)
     
     originalY = rootPart.Position.Y
     targetY = originalY - OFFSET
+    
+    -- Reset UI
+    isUnderground = false
+    ToggleBtn.Text = "UNDERGROUND: OFF"
+    ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
     
     if isUnderground then
         SetCollision(false)
