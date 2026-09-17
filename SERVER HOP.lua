@@ -1,6 +1,6 @@
 -- ============================================================
--- 🎯 SERVER HOP — Server List with Player Count
--- Click mo lang yung server → hop agad
+-- 🎯 SERVER HOP — Auto Refresh Until Low Player Server Found
+-- Puro empty/low lang ang nakikita
 -- ============================================================
 
 local HttpService = game:GetService("HttpService")
@@ -11,18 +11,17 @@ local LocalPlayer = Players.LocalPlayer
 
 -- ============ CONFIG ============
 local HopConfig = {
-    maxPlayers = 5,       -- Max players na ipapakita
+    maxPlayers = 3,          -- 🎯 Max players (0-3 lang ipapakita)
+    autoRefresh = true,      -- 🔄 Auto-refresh pag puro puno
+    autoRefreshDelay = 5,    -- Seconds bago mag-auto refresh
+    maxPages = 5,            -- Ilang pages ng servers hanapin
     timeout = 15,
-    maxRetries = 3,
 }
 
 -- ============================================================
--- 🎯 FETCH SERVERS
+-- 🎯 FETCH SERVERS (multi-page)
 -- ============================================================
 local function fetchServers()
-    local url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&excludeFullGames=true&limit=100")
-        :format(game.PlaceId)
-    
     local requester = (syn and syn.request)
         or (http and http.request) or http_request or request
     
@@ -30,58 +29,79 @@ local function fetchServers()
         return nil, "❌ Walang HTTP requester"
     end
     
-    local ok, response = pcall(requester, {
-        Url = url,
-        Method = "GET",
-        Headers = { ["Accept"] = "application/json" },
-    })
+    local allServers = {}
+    local cursor = nil
+    local pagesFetched = 0
+    local seen = {}
     
-    if not ok or type(response) ~= "table" then
-        return nil, "❌ Request failed"
-    end
-    
-    local statusCode = tonumber(response.StatusCode or response.Status)
-    if not statusCode or statusCode < 200 or statusCode >= 300 then
-        return nil, ("❌ HTTP %d"):format(statusCode or 0)
-    end
-    
-    local body = response.Body or response.body or ""
-    local decodeOk, decoded = pcall(HttpService.JSONDecode, HttpService, body)
-    
-    if not decodeOk or type(decoded) ~= "table" then
-        return nil, "❌ JSON decode failed"
-    end
-    
-    local servers = decoded.data or {}
-    local candidates = {}
-    
-    for _, srv in ipairs(servers) do
-        if type(srv) == "table" and srv.id and srv.id ~= game.JobId then
-            local playing = tonumber(srv.playing) or 0
-            local maxP = tonumber(srv.maxPlayers) or 0
-            if playing <= HopConfig.maxPlayers and playing < maxP then
-                candidates[#candidates + 1] = {
-                    id = srv.id,
-                    playing = playing,
-                    maxPlayers = maxP,
-                    ping = tonumber(srv.ping),
-                    fps = tonumber(srv.fps),
-                }
+    repeat
+        local url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&excludeFullGames=true&limit=100")
+            :format(game.PlaceId)
+        if cursor then
+            url = url .. "&cursor=" .. HttpService:UrlEncode(cursor)
+        end
+        
+        local ok, response = pcall(requester, {
+            Url = url,
+            Method = "GET",
+            Headers = { ["Accept"] = "application/json" },
+        })
+        
+        if not ok or type(response) ~= "table" then
+            break
+        end
+        
+        local statusCode = tonumber(response.StatusCode or response.Status)
+        if not statusCode or statusCode < 200 or statusCode >= 300 then
+            break
+        end
+        
+        local body = response.Body or response.body or ""
+        local decodeOk, decoded = pcall(HttpService.JSONDecode, HttpService, body)
+        
+        if not decodeOk or type(decoded) ~= "table" then
+            break
+        end
+        
+        local servers = decoded.data or {}
+        for _, srv in ipairs(servers) do
+            if type(srv) == "table" and srv.id and srv.id ~= game.JobId 
+               and not seen[srv.id] then
+                local playing = tonumber(srv.playing) or 0
+                local maxP = tonumber(srv.maxPlayers) or 0
+                if playing <= HopConfig.maxPlayers and playing < maxP then
+                    seen[srv.id] = true
+                    allServers[#allServers + 1] = {
+                        id = srv.id,
+                        playing = playing,
+                        maxPlayers = maxP,
+                        ping = tonumber(srv.ping),
+                        fps = tonumber(srv.fps),
+                    }
+                end
             end
         end
-    end
+        
+        pagesFetched += 1
+        cursor = decoded.nextPageCursor
+        
+        if pagesFetched >= HopConfig.maxPages then break end
+        if type(cursor) ~= "string" or cursor == "" then break end
+        
+        task.wait(0.3) -- Rate limit prevent
+    until false
     
-    -- Sort: pinakakaunting players muna
-    table.sort(candidates, function(a, b)
+    -- Sort: lowest players first
+    table.sort(allServers, function(a, b)
         if a.playing ~= b.playing then return a.playing < b.playing end
         return (a.ping or 999) < (b.ping or 999)
     end)
     
-    return candidates
+    return allServers
 end
 
 -- ============================================================
--- 🎯 HOP TO SERVER
+-- 🎯 HOP
 -- ============================================================
 local function hopTo(serverId)
     local ok = pcall(function()
@@ -104,7 +124,7 @@ local COLORS = {
     CYAN = Color3.fromRGB(80, 200, 255),
     DARK = Color3.fromRGB(18, 18, 22),
     HOVER = Color3.fromRGB(45, 45, 55),
-    EMPTY_GREEN = Color3.fromRGB(20, 100, 60),
+    EMPTY_GREEN = Color3.fromRGB(20, 180, 100),
     LOW_GREEN = Color3.fromRGB(30, 140, 80),
     MID_YELLOW = Color3.fromRGB(180, 140, 30),
     HIGH_RED = Color3.fromRGB(160, 60, 60),
@@ -120,10 +140,9 @@ local function createServerHopUI()
     ScreenGui.ResetOnSpawn = false
     ScreenGui.Parent = CoreGui
     
-    -- Main Window
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 320, 0, 450)
-    Main.Position = UDim2.new(0.5, -160, 0.5, -225)
+    Main.Size = UDim2.new(0, 320, 0, 480)
+    Main.Position = UDim2.new(0.5, -160, 0.5, -240)
     Main.BackgroundColor3 = COLORS.BG
     Main.BorderSizePixel = 0
     Main.Active = true
@@ -134,7 +153,7 @@ local function createServerHopUI()
     local stroke = Instance.new("UIStroke", Main)
     stroke.Color = COLORS.STROKE
     
-    -- Title Bar
+    -- Title
     local TitleBar = Instance.new("Frame", Main)
     TitleBar.Size = UDim2.new(1, 0, 0, 32)
     TitleBar.BackgroundColor3 = COLORS.TITLE_BG
@@ -151,7 +170,7 @@ local function createServerHopUI()
     Title.Size = UDim2.new(1, -40, 1, 0)
     Title.Position = UDim2.new(0, 10, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "🎯 Server Hop — Click to Join"
+    Title.Text = "🎯 Server Hop — Low Player Only"
     Title.TextColor3 = COLORS.CYAN
     Title.TextSize = 12
     Title.Font = Enum.Font.GothamBold
@@ -178,10 +197,21 @@ local function createServerHopUI()
     Status.Font = Enum.Font.Gotham
     Status.TextXAlignment = Enum.TextXAlignment.Left
     
+    -- Stats
+    local StatsLabel = Instance.new("TextLabel", Main)
+    StatsLabel.Size = UDim2.new(1, -24, 0, 16)
+    StatsLabel.Position = UDim2.new(0, 12, 0, 58)
+    StatsLabel.BackgroundTransparency = 1
+    StatsLabel.Text = ""
+    StatsLabel.TextColor3 = COLORS.CYAN
+    StatsLabel.TextSize = 9
+    StatsLabel.Font = Enum.Font.Gotham
+    StatsLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
     -- Refresh Button
     local RefreshBtn = Instance.new("TextButton", Main)
     RefreshBtn.Size = UDim2.new(0, 80, 0, 24)
-    RefreshBtn.Position = UDim2.new(1, -92, 0, 38)
+    RefreshBtn.Position = UDim2.new(1, -92, 0, 40)
     RefreshBtn.BackgroundColor3 = COLORS.CYAN
     RefreshBtn.BorderSizePixel = 0
     RefreshBtn.Text = "🔄 Refresh"
@@ -191,10 +221,23 @@ local function createServerHopUI()
     RefreshBtn.AutoButtonColor = false
     Instance.new("UICorner", RefreshBtn).CornerRadius = UDim.new(0, 5)
     
-    -- Scroll Frame (server list)
+    -- 🎯 Auto-Refresh Toggle
+    local AutoRefreshBtn = Instance.new("TextButton", Main)
+    AutoRefreshBtn.Size = UDim2.new(0, 80, 0, 20)
+    AutoRefreshBtn.Position = UDim2.new(0, 12, 0, 78)
+    AutoRefreshBtn.BackgroundColor3 = COLORS.LOW_GREEN
+    AutoRefreshBtn.BorderSizePixel = 0
+    AutoRefreshBtn.Text = "🔄 Auto: ON"
+    AutoRefreshBtn.TextColor3 = COLORS.TEXT
+    AutoRefreshBtn.TextSize = 9
+    AutoRefreshBtn.Font = Enum.Font.GothamBold
+    AutoRefreshBtn.AutoButtonColor = false
+    Instance.new("UICorner", AutoRefreshBtn).CornerRadius = UDim.new(0, 4)
+    
+    -- Scroll
     local Scroll = Instance.new("ScrollingFrame", Main)
-    Scroll.Size = UDim2.new(1, -24, 1, -100)
-    Scroll.Position = UDim2.new(0, 12, 0, 72)
+    Scroll.Size = UDim2.new(1, -24, 1, -120)
+    Scroll.Position = UDim2.new(0, 12, 0, 104)
     Scroll.BackgroundColor3 = COLORS.DARK
     Scroll.BorderSizePixel = 0
     Scroll.ScrollBarThickness = 4
@@ -210,7 +253,7 @@ local function createServerHopUI()
     scrollLayout.Padding = UDim.new(0, 4)
     scrollLayout.SortOrder = Enum.SortOrder.LayoutOrder
     
-    -- Info Label
+    -- Info
     local InfoLabel = Instance.new("TextLabel", Main)
     InfoLabel.Size = UDim2.new(1, -24, 0, 16)
     InfoLabel.Position = UDim2.new(0, 12, 1, -22)
@@ -222,25 +265,22 @@ local function createServerHopUI()
     InfoLabel.TextXAlignment = Enum.TextXAlignment.Left
     
     return {
-        ScreenGui = ScreenGui,
-        Main = Main,
-        Status = Status,
-        RefreshBtn = RefreshBtn,
-        Scroll = Scroll,
-        ScrollLayout = scrollLayout,
-        CloseBtn = CloseBtn,
-        InfoLabel = InfoLabel,
+        ScreenGui = ScreenGui, Main = Main,
+        Status = Status, StatsLabel = StatsLabel,
+        RefreshBtn = RefreshBtn, AutoRefreshBtn = AutoRefreshBtn,
+        Scroll = Scroll, ScrollLayout = scrollLayout,
+        CloseBtn = CloseBtn, InfoLabel = InfoLabel,
     }
 end
 
 local ui = createServerHopUI()
 
 -- ============================================================
--- 🎯 SERVER LIST ROW
+-- 🎯 SERVER ROW
 -- ============================================================
 local function createServerRow(parent, index, data)
     local row = Instance.new("TextButton", parent)
-    row.Size = UDim2.new(1, -8, 0, 40)
+    row.Size = UDim2.new(1, -8, 0, 42)
     row.BackgroundColor3 = COLORS.HOVER
     row.BorderSizePixel = 0
     row.Text = ""
@@ -253,19 +293,18 @@ local function createServerRow(parent, index, data)
     stroke.Thickness = 1
     stroke.Transparency = 0.5
     
-    -- Player count badge
     local playing = data.playing
     local maxP = data.maxPlayers
     
-    -- Color based on player count
+    -- Color based on players
     local badgeColor, statusText
     if playing == 0 then
         badgeColor = COLORS.EMPTY_GREEN
         statusText = "EMPTY"
-    elseif playing == 1 then
+    elseif playing <= 2 then
         badgeColor = COLORS.LOW_GREEN
         statusText = "LOW"
-    elseif playing <= 3 then
+    elseif playing <= 4 then
         badgeColor = COLORS.MID_YELLOW
         statusText = "MID"
     else
@@ -275,7 +314,7 @@ local function createServerRow(parent, index, data)
     
     stroke.Color = badgeColor
     
-    -- Left: Status indicator
+    -- Indicator
     local indicator = Instance.new("Frame", row)
     indicator.Size = UDim2.new(0, 4, 1, -8)
     indicator.Position = UDim2.new(0, 4, 0, 4)
@@ -283,7 +322,7 @@ local function createServerRow(parent, index, data)
     indicator.BorderSizePixel = 0
     Instance.new("UICorner", indicator).CornerRadius = UDim.new(1, 0)
     
-    -- Player count text (big)
+    -- Player count
     local countLabel = Instance.new("TextLabel", row)
     countLabel.Size = UDim2.new(0, 80, 1, 0)
     countLabel.Position = UDim2.new(0, 14, 0, 0)
@@ -294,7 +333,7 @@ local function createServerRow(parent, index, data)
     countLabel.Font = Enum.Font.GothamBold
     countLabel.TextXAlignment = Enum.TextXAlignment.Left
     
-    -- "players" subtext
+    -- "players"
     local playerLabel = Instance.new("TextLabel", row)
     playerLabel.Size = UDim2.new(0, 60, 1, 0)
     playerLabel.Position = UDim2.new(0, 90, 0, 0)
@@ -304,6 +343,19 @@ local function createServerRow(parent, index, data)
     playerLabel.TextSize = 10
     playerLabel.Font = Enum.Font.Gotham
     playerLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    -- Ping info
+    if data.ping then
+        local pingLabel = Instance.new("TextLabel", row)
+        pingLabel.Size = UDim2.new(0, 60, 1, 0)
+        pingLabel.Position = UDim2.new(0, 155, 0, 0)
+        pingLabel.BackgroundTransparency = 1
+        pingLabel.Text = ("%dms"):format(math.floor(data.ping))
+        pingLabel.TextColor3 = COLORS.YELLOW
+        pingLabel.TextSize = 9
+        pingLabel.Font = Enum.Font.Gotham
+        pingLabel.TextXAlignment = Enum.TextXAlignment.Left
+    end
     
     -- Status badge
     local statusBadge = Instance.new("TextLabel", row)
@@ -317,7 +369,7 @@ local function createServerRow(parent, index, data)
     statusBadge.Font = Enum.Font.GothamBold
     Instance.new("UICorner", statusBadge).CornerRadius = UDim.new(0, 3)
     
-    -- Hover effect
+    -- Hover
     row.MouseEnter:Connect(function()
         row.BackgroundColor3 = Color3.fromRGB(60, 60, 75)
     end)
@@ -337,10 +389,16 @@ local function createServerRow(parent, index, data)
 end
 
 -- ============================================================
--- 🎯 REFRESH SERVER LIST
+-- 🎯 REFRESH LOGIC
 -- ============================================================
+local autoRefreshEnabled = HopConfig.autoRefresh
+local refreshing = false
+
 local function refreshServerList()
-    -- Clear existing rows
+    if refreshing then return end
+    refreshing = true
+    
+    -- Clear rows
     for _, child in ipairs(ui.Scroll:GetChildren()) do
         if child:IsA("TextButton") then
             child:Destroy()
@@ -355,6 +413,7 @@ local function refreshServerList()
         local servers, err = fetchServers()
         
         ui.RefreshBtn.BackgroundColor3 = COLORS.CYAN
+        refreshing = false
         
         if not servers then
             ui.Status.Text = tostring(err)
@@ -363,29 +422,31 @@ local function refreshServerList()
         end
         
         if #servers == 0 then
-            ui.Status.Text = "❌ Walang servers na nahanap"
+            ui.Status.Text = "❌ Walang low-player servers"
             ui.Status.TextColor3 = COLORS.RED
+            ui.StatsLabel.Text = "Hintayin mo mag-refresh..."
             return
         end
         
-        -- Count by player ranges
+        -- Count by type
         local emptyCount, lowCount, midCount = 0, 0, 0
         for _, s in ipairs(servers) do
             if s.playing == 0 then emptyCount += 1
             elseif s.playing <= 2 then lowCount += 1
-            elseif s.playing <= 5 then midCount += 1
+            elseif s.playing <= 4 then midCount += 1
             end
         end
         
-        ui.Status.Text = ("✅ %d servers | %d empty | %d low | %d mid"):format(
-            #servers, emptyCount, lowCount, midCount)
+        ui.Status.Text = ("✅ %d servers nahanap"):format(#servers)
         ui.Status.TextColor3 = COLORS.GREEN
+        ui.StatsLabel.Text = ("🟢 %d empty | %d low | %d mid"):format(
+            emptyCount, lowCount, midCount)
         
         -- Create rows
         local yOffset = 0
         for i, serverData in ipairs(servers) do
-            local row = createServerRow(ui.Scroll, i, serverData)
-            yOffset = yOffset + 44
+            createServerRow(ui.Scroll, i, serverData)
+            yOffset += 46
         end
         
         ui.Scroll.CanvasSize = UDim2.new(0, 0, 0, yOffset + 8)
@@ -393,9 +454,37 @@ local function refreshServerList()
 end
 
 -- ============================================================
+-- 🎯 AUTO REFRESH LOOP
+-- ============================================================
+task.spawn(function()
+    while ui.ScreenGui.Parent do
+        task.wait(HopConfig.autoRefreshDelay)
+        
+        if autoRefreshEnabled and ui.ScreenGui.Parent and not refreshing then
+            -- Count rows (servers)
+            local rowCount = 0
+            for _, child in ipairs(ui.Scroll:GetChildren()) do
+                if child:IsA("TextButton") then
+                    rowCount += 1
+                end
+            end
+            
+            -- Auto refresh pag wala o konti servers
+            if rowCount < 3 then
+                ui.Status.Text = "🔄 Auto-refresh (konti servers)..."
+                ui.Status.TextColor3 = COLORS.YELLOW
+                refreshServerList()
+            end
+        end
+    end
+end)
+
+-- ============================================================
 -- 🎯 WIRING
 -- ============================================================
-ui.RefreshBtn.MouseButton1Click:Connect(refreshServerList)
+ui.RefreshBtn.MouseButton1Click:Connect(function()
+    if not refreshing then refreshServerList() end
+end)
 
 ui.RefreshBtn.MouseEnter:Connect(function()
     ui.RefreshBtn.BackgroundColor3 = Color3.fromRGB(120, 220, 255)
@@ -404,14 +493,29 @@ ui.RefreshBtn.MouseLeave:Connect(function()
     ui.RefreshBtn.BackgroundColor3 = COLORS.CYAN
 end)
 
+ui.AutoRefreshBtn.MouseButton1Click:Connect(function()
+    autoRefreshEnabled = not autoRefreshEnabled
+    if autoRefreshEnabled then
+        ui.AutoRefreshBtn.BackgroundColor3 = COLORS.LOW_GREEN
+        ui.AutoRefreshBtn.Text = "🔄 Auto: ON"
+        ui.Status.Text = "✅ Auto-refresh ON"
+        ui.Status.TextColor3 = COLORS.GREEN
+    else
+        ui.AutoRefreshBtn.BackgroundColor3 = COLORS.HIGH_RED
+        ui.AutoRefreshBtn.Text = "🔄 Auto: OFF"
+        ui.Status.Text = "❌ Auto-refresh OFF"
+        ui.Status.TextColor3 = COLORS.RED
+    end
+end)
+
 ui.CloseBtn.MouseButton1Click:Connect(function()
     ui.ScreenGui:Destroy()
 end)
 
--- Auto-refresh sa start
+-- Start
 task.spawn(function()
     task.wait(0.5)
     refreshServerList()
 end)
 
-print("[HOP] ✅ Server Hop UI ready — click any server to join")
+print("[HOP] ✅ Server Hop UI ready")
