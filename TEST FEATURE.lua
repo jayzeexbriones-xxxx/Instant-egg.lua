@@ -1,38 +1,25 @@
--- ============================================================
--- AUTO GRAB — HIGHEST FIRST + LONG ESP LINE (10,000 STUDS)
--- ============================================================
+-- ============================================
+-- ANTI-FIELD V8 (Area Detection Teleport)
+-- Pagdating sa Forest area, auto-teleport sa base
+-- ============================================
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
 local CoreGui           = game:GetService("CoreGui")
-local RunService        = game:GetService("RunService")
-local LocalPlayer       = Players.LocalPlayer
 
--- ============ STATE ============
-local State = {
-    running      = false,
-    minArea      = 10,
-    minValue     = 5e7,
-    checkDelay   = 0.1,
-    grabCooldown = 2,
-    postGrabWait = 0.3,
-    espEnabled   = true,
-}
+local LocalPlayer = Players.LocalPlayer
 
-local AREA_NAMES = {
-    "Forest", "Lake", "Desert", "Jungle", "Snow",
-    "Volcano", "Abyss Ocean", "Prehistoric", "Cosmic",
-    "Cherry Blossom", "Titan Temple", "Light Dark",
-}
+-- ============ SETTINGS ============
+local START_POS = Vector3.new(519.155, 70.576, -356.103) -- Base position mo
+local TRIGGER_AREA = "Forest"  -- Area kung saan mag-te-teleport
+local TP_COOLDOWN = 3          -- Cooldown between teleports
 
--- ============ MODULES ============
+-- ============ EGG STATE ============
 local EggState = nil
-local AssetsDir = nil
-local Mutations = nil
-local AssetEarnings = nil
 
-local function loadModules()
+local function loadEggState()
     if EggState then return true end
     local ok = pcall(function()
         local client = ReplicatedStorage:FindFirstChild("Client")
@@ -40,656 +27,276 @@ local function loadModules()
             local es = client:FindFirstChild("EggState")
             if es then EggState = require(es) end
         end
-        local data = ReplicatedStorage:FindFirstChild("Data")
-        if data then
-            local assets = data:FindFirstChild("Assets")
-            if assets then
-                local okA, mod = pcall(require, assets)
-                if okA and mod then AssetsDir = mod.Directory end
-            end
-        end
-        local shared = ReplicatedStorage:FindFirstChild("Shared")
-        if shared then
-            local modules = shared:FindFirstChild("Modules")
-            if modules then
-                local mut = modules:FindFirstChild("Mutations")
-                if mut then
-                    local okM, mod = pcall(require, mut)
-                    if okM then Mutations = mod end
-                end
-            end
-            local util = shared:FindFirstChild("Util")
-            if util then
-                local ae = util:FindFirstChild("AssetEarnings")
-                if ae then
-                    local okE, mod = pcall(require, ae)
-                    if okE then AssetEarnings = mod end
-                end
-            end
-        end
     end)
     return ok and EggState ~= nil
 end
 
--- ============ HELPERS ============
-local function getRarityNumber(rec)
-    if rec and rec.Rarity and type(rec.Rarity) == "table" then
-        return rec.Rarity.RarityNumber or 0
+-- ============ HANAPIN YUNG AREA NG CHARACTER MO ============
+local function getCurrentArea()
+    if not EggState then return nil end
+    
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    
+    -- Hanapin yung area base sa position mo
+    local ok, fieldEggs = pcall(function() return EggState.ReadFieldEggs() end)
+    if not ok or not fieldEggs or not fieldEggs.Records then return nil end
+    
+    -- Hanapin yung pinaka-malapit na area
+    local closestArea = nil
+    local closestDist = math.huge
+    
+    for _, rec in ipairs(fieldEggs.Records) do
+        if rec.BoundsCFrame and rec.BoundsCFrame.Position then
+            local dist = (rec.BoundsCFrame.Position - hrp.Position).Magnitude
+            if dist < closestDist then
+                closestDist = dist
+                closestArea = rec.AreaId
+            end
+        end
     end
-    return 0
-end
-
-local function getAssetScale(rec)
-    return tonumber(rec.AssetScale) or 1
-end
-
-local function getEggPos(rec)
-    if not rec then return nil end
-    if rec.BoundsCFrame and rec.BoundsCFrame.Position then
-        return rec.BoundsCFrame.Position
+    
+    -- Kung malapit lang (within 200 studs)
+    if closestDist < 200 then
+        return closestArea
     end
+    
     return nil
 end
 
--- ============ CALCULATE EGG VALUE ============
-local function calcEggValue(rec)
-    if not rec then return 0 end
-
-    if AssetEarnings then
-        local ok, rate = pcall(function()
-            local item = {
-                Category = rec.AssetCategory,
-                Scale = tonumber(rec.AssetScale) or 1,
-                Mutations = rec.Mutations or {},
-            }
-            return AssetEarnings.LiveRatePerSecond(item, nil, nil, LocalPlayer)
-        end)
-        if ok and type(rate) == "number" and rate > 0 then
-            return rate
-        end
-    end
-
-    local scale = getAssetScale(rec)
-    local mutMult = 1
-
-    if rec.Mutations and #rec.Mutations > 0 and Mutations then
-        pcall(function()
-            local item = { Mutations = rec.Mutations }
-            mutMult = Mutations.EarningsFor(item) or 1
-        end)
-    end
-
-    local baseRate = 0
-    if AssetsDir then
-        local dir = AssetsDir[rec.AssetCategory]
-        if dir then baseRate = tonumber(dir.EarningRate) or 0 end
-    end
-
-    local scaleFactor = scale <= 5 and scale ^ 1.85 or (scale / 5) ^ 1.2 * 19.637875755794113
-    local value = baseRate * scaleFactor * mutMult
-    return math.max(1, math.round(value))
-end
-
--- ============ FIND ALL EGGS ============
-local function findAllHighValueEggs()
-    if not EggState then return {} end
-    local ok, fieldEggs = pcall(function() return EggState.ReadFieldEggs() end)
-    if not ok or not fieldEggs or not fieldEggs.Records then return {} end
-
-    local eggs = {}
-
-    for _, rec in ipairs(fieldEggs.Records) do
-        if rec.State == "Slot" or rec.State == "Dropped" then
-            local areaIdx = nil
-            for i, name in ipairs(AREA_NAMES) do
-                if rec.AreaId == name then areaIdx = i break end
-            end
-
-            if areaIdx and areaIdx >= State.minArea then
-                local value = calcEggValue(rec)
-                if value >= State.minValue then
-                    eggs[#eggs + 1] = { rec = rec, value = value }
-                end
-            end
-        end
-    end
-
-    table.sort(eggs, function(a, b) return a.value > b.value end)
-    return eggs
-end
-
--- ============ FAST GRAB ============
-local function fastGrabEgg(rec)
-    if not rec then return false, "no rec" end
-
-    local ok1, res1 = pcall(function()
-        return EggState.CarryFieldEgg(rec.Uid)
-    end)
-    if ok1 and res1 == true then
-        return true, "instant"
-    end
-
-    local eggPos = getEggPos(rec)
-    if not eggPos then return false, "no pos" end
-
-    local CarryAreaEggs = Workspace:QueryDescendants("#CarryAreaEgg")
-    local closetprompt, closetdist = nil, math.huge
-    for _, prompt in next, CarryAreaEggs do
-        local p = prompt.Parent
-        if p then
-            local dist = (eggPos - p.Position).Magnitude
-            if dist < closetdist then
-                closetdist = dist
-                closetprompt = prompt
-            end
-        end
-    end
-
-    if closetprompt and fireproximityprompt then
-        pcall(function()
-            closetprompt.HoldDuration = 0
-            fireproximityprompt(closetprompt, 0)
-        end)
-        return true, "prompt"
-    end
-
-    return false, "no prompt"
-end
-
--- ============ FORMAT NUMBER ============
-local function formatNumber(n)
-    n = tonumber(n) or 0
-    local units = {{1e12,"T"},{1e9,"B"},{1e6,"M"},{1e3,"K"}}
-    for _, u in ipairs(units) do
-        if n >= u[1] then
-            local v = n / u[1]
-            return string.format("%.2f%s", v, u[2])
-        end
-    end
-    return tostring(math.round(n))
-end
-
--- ============================================================
--- ESP LINE SYSTEM (SINGLE LONG LINE — 10,000 STUDS)
--- ============================================================
-local ESP = {
-    line = nil,
-    targetPart = nil,
-    targetPos = nil,
-    MAX_DISTANCE = 10000, -- 10,000 studs max
-}
-
-local function createESPLine()
-    if ESP.line then return end
-    
-    local line = Instance.new("Part")
-    line.Name = "ESP_BestEggLine"
-    line.Anchored = true
-    line.CanCollide = false
-    line.CanQuery = false
-    line.CanTouch = false
-    line.Transparency = 0.3
-    line.Color = Color3.fromRGB(255, 215, 0)
-    line.Material = Enum.Material.Neon
-    line.Size = Vector3.new(0.2, 0.2, 1)
-    line.Parent = Workspace
-    
-    -- SpecialMesh para ma-extend yung haba beyond 2048 studs
-    local mesh = Instance.new("SpecialMesh")
-    mesh.MeshType = Enum.MeshType.Brick
-    mesh.Scale = Vector3.new(1, 1, 1)
-    mesh.Parent = line
-    
-    ESP.line = line
-end
-
-local function updateESPLine()
-    if not State.espEnabled then
-        if ESP.line then ESP.line.Transparency = 1 end
-        return
-    end
-
-    if not ESP.line then createESPLine() end
-    if not ESP.line then return end
-
+-- ============ CHECK KUNG MAY DALA KANG EGG ============
+local function hasCarriedEgg()
     local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then
-        ESP.line.Transparency = 1
-        return
-    end
+    if not char then return false end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
 
-    if not ESP.targetPos then
-        ESP.line.Transparency = 1
-        return
-    end
-
-    -- Check kung valid pa yung target
-    if ESP.targetPart and not ESP.targetPart.Parent then
-        ESP.targetPart = nil
-        ESP.targetPos = nil
-        ESP.line.Transparency = 1
-        return
-    end
-
-    local startPos = hrp.Position
-    local endPos = ESP.targetPos
-    local totalDist = (endPos - startPos).Magnitude
-
-    -- I-clamp sa 10,000 studs max
-    if totalDist > ESP.MAX_DISTANCE then
-        local direction = (endPos - startPos).Unit
-        endPos = startPos + direction * ESP.MAX_DISTANCE
-        totalDist = ESP.MAX_DISTANCE
-    end
-
-    local midPos = (startPos + endPos) / 2
-
-    ESP.line.CFrame = CFrame.new(midPos, endPos)
-    
-    -- I-set yung size (max 2048 sa standard Part)
-    local safeSize = math.min(totalDist, 2048)
-    ESP.line.Size = Vector3.new(0.2, 0.2, safeSize)
-    
-    -- I-scale yung mesh para umabot sa totalDist
-    local mesh = ESP.line:FindFirstChildOfClass("SpecialMesh")
-    if mesh then
-        local scaleZ = totalDist / safeSize
-        mesh.Scale = Vector3.new(1, 1, scaleZ)
-    end
-    
-    ESP.line.Transparency = 0.3
-end
-
-local function setESPTarget(rec)
-    if not rec then
-        ESP.targetPart = nil
-        ESP.targetPos = nil
-        return
-    end
-    local eggPos = getEggPos(rec)
-    if eggPos then
-        ESP.targetPos = eggPos
-        local model = Workspace:FindFirstChild(rec.Uid, true)
-        if model then
-            ESP.targetPart = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+    -- Check AssetWeld
+    for _, obj in pairs(hrp:GetChildren()) do
+        if obj:IsA("WeldConstraint") then
+            if obj.Part0 and not obj.Part0:IsDescendantOf(char) then return true end
+            if obj.Part1 and not obj.Part1:IsDescendantOf(char) then return true end
         end
     end
-end
 
-local function clearESP()
-    if ESP.line then
-        ESP.line:Destroy()
-        ESP.line = nil
-    end
-    ESP.targetPart = nil
-    ESP.targetPos = nil
-end
-
--- ============================================================
--- MAIN LOOP
--- ============================================================
-local function mainLoop()
-    State.running = true
-    warn("=== AUTO GRAB START (Highest First + ESP) ===")
-
-    local lastGrabbed = {}
-    local grabCount = 0
-
-    while State.running do
-        task.wait(State.checkDelay)
-        if not State.running then break end
-
-        if not loadModules() then
-            task.wait(0.5)
-            continue
-        end
-
-        local eggs = findAllHighValueEggs()
-
-        if #eggs > 0 then
-            setESPTarget(eggs[1].rec)
-        else
-            setESPTarget(nil)
-        end
-
-        if #eggs > 0 then
-            local grabbed = false
-            for _, item in ipairs(eggs) do
-                if not State.running then break end
-
-                local rec = item.rec
-                local value = item.value
-                local lastTime = lastGrabbed[rec.Uid]
-
-                if not lastTime or (tick() - lastTime) > State.grabCooldown then
-                    lastGrabbed[rec.Uid] = tick()
-
-                    warn(("[TARGET] %s /s (%s) — grabbing"):format(
-                        formatNumber(value), rec.AreaId))
-
-                    local ok, method = fastGrabEgg(rec)
-                    if ok then
-                        grabCount = grabCount + 1
-                        warn(("[GRAB #%d] ✅ %s | %s /s | %s"):format(
-                            grabCount, rec.AreaId, formatNumber(value), method))
-                        grabbed = true
-                        break
-                    end
-
-                    task.wait(State.postGrabWait)
-                end
-            end
-
-            if not grabbed then
-                task.wait(0.3)
-            end
-        else
-            task.wait(0.5)
-        end
-
-        if grabCount % 50 == 0 then
-            local now = tick()
-            for uid, t in pairs(lastGrabbed) do
-                if now - t > 30 then lastGrabbed[uid] = nil end
+    -- Check EggCarryBounds
+    local carryBounds = Workspace:FindFirstChild("EggCarryBounds")
+    if carryBounds then
+        for _, obj in pairs(carryBounds:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                local dist = (obj.Position - hrp.Position).Magnitude
+                if dist < 25 then return true end
             end
         end
     end
 
-    clearESP()
-    warn("=== AUTO GRAB STOP ===")
+    return false
+end
+
+-- ============ MAIN LOGIC ============
+local antiFieldEnabled = false
+local antiFieldConn = nil
+local teleportCooldown = 0
+local lastArea = nil
+
+local function startAntiField()
+    if not loadEggState() then
+        return false, "EggState not found"
+    end
+
+    antiFieldConn = RunService.Heartbeat:Connect(function()
+        if not antiFieldEnabled then return end
+        
+        -- Check cooldown
+        if tick() - teleportCooldown < TP_COOLDOWN then return end
+        
+        local c = LocalPlayer.Character
+        if not c then return end
+        local h = c:FindFirstChildOfClass("Humanoid")
+        if not h then return end
+        local hrp = c:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        local carrying = hasCarriedEgg()
+        if not carrying then return end
+
+        -- Hanapin yung current area
+        local currentArea = getCurrentArea()
+        
+        if currentArea then
+            -- Check kung nasa trigger area na
+            if currentArea == TRIGGER_AREA then
+                print("[AntiField] Detected " .. TRIGGER_AREA .. "! Teleporting to base...")
+                
+                teleportCooldown = tick()
+                
+                pcall(function()
+                    c:PivotTo(CFrame.new(START_POS))
+                    hrp.CFrame = CFrame.new(START_POS)
+                end)
+                
+                print("[AntiField] Teleported to base! Cooldown active.")
+            end
+            
+            -- I-log yung area changes (para sa debug)
+            if lastArea ~= currentArea then
+                print("[AntiField] Area changed: " .. tostring(lastArea) .. " -> " .. currentArea)
+                lastArea = currentArea
+            end
+        end
+    end)
+
+    return true
+end
+
+local function stopAntiField()
+    if antiFieldConn then
+        antiFieldConn:Disconnect()
+        antiFieldConn = nil
+    end
 end
 
 -- ============ UI ============
-local COLORS = {
-    BG = Color3.fromRGB(25, 25, 30),
-    TITLE_BG = Color3.fromRGB(35, 35, 42),
-    STROKE = Color3.fromRGB(60, 60, 70),
-    TEXT = Color3.fromRGB(255, 255, 255),
-    GREEN = Color3.fromRGB(0, 180, 90),
-    RED = Color3.fromRGB(200, 50, 50),
-    KNOB = Color3.fromRGB(255, 255, 255),
-    TRACK_OFF = Color3.fromRGB(70, 70, 80),
-    YELLOW = Color3.fromRGB(255, 200, 0),
-    GOLD = Color3.fromRGB(255, 215, 0),
-    CYAN = Color3.fromRGB(80, 200, 255),
-}
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AntiFieldUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = CoreGui
 
-local function createUI()
-    if CoreGui:FindFirstChild("AutoGrabUI") then
-        CoreGui.AutoGrabUI:Destroy()
-    end
+local Main = Instance.new("Frame")
+Main.Size = UDim2.new(0, 280, 0, 160)
+Main.Position = UDim2.new(0.5, -140, 0.2, 0)
+Main.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+Main.BorderSizePixel = 0
+Main.Active = true
+Main.Draggable = true
+Main.Parent = ScreenGui
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 8)
 
-    local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "AutoGrabUI"
-    ScreenGui.ResetOnSpawn = false
-    ScreenGui.Parent = CoreGui
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 25)
+Title.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+Title.Text = "🚀 ANTI-FIELD V8 (Area TP)"
+Title.TextColor3 = Color3.fromRGB(255, 200, 0)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 11
+Title.Parent = Main
+Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 8)
 
-    local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 300, 0, 240)
-    Main.Position = UDim2.new(0.5, -150, 0.5, -120)
-    Main.BackgroundColor3 = COLORS.BG
-    Main.BorderSizePixel = 0
-    Main.Active = true
-    Main.Draggable = true
-    Main.Parent = ScreenGui
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Size = UDim2.new(1, -20, 0, 35)
+ToggleBtn.Position = UDim2.new(0, 10, 0, 30)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+ToggleBtn.Text = "AUTO-TP: OFF"
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.TextSize = 12
+ToggleBtn.Parent = Main
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 6)
 
-    Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
-    local s1 = Instance.new("UIStroke", Main)
-    s1.Color = COLORS.STROKE
+local Info = Instance.new("TextLabel")
+Info.Size = UDim2.new(1, -20, 0, 16)
+Info.Position = UDim2.new(0, 10, 0, 70)
+Info.BackgroundTransparency = 1
+Info.Text = "Current Area: --"
+Info.TextColor3 = Color3.fromRGB(100, 200, 255)
+Info.TextSize = 10
+Info.Font = Enum.Font.Code
+Info.Parent = Main
 
-    local TitleBar = Instance.new("Frame", Main)
-    TitleBar.Size = UDim2.new(1, 0, 0, 35)
-    TitleBar.BackgroundColor3 = COLORS.TITLE_BG
-    TitleBar.BorderSizePixel = 0
-    Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
+local Info2 = Instance.new("TextLabel")
+Info2.Size = UDim2.new(1, -20, 0, 16)
+Info2.Position = UDim2.new(0, 10, 0, 88)
+Info2.BackgroundTransparency = 1
+Info2.Text = "Carrying: -- | Speed: --"
+Info2.TextColor3 = Color3.fromRGB(100, 200, 255)
+Info2.TextSize = 10
+Info2.Font = Enum.Font.Code
+Info2.Parent = Main
 
-    local TitleCover = Instance.new("Frame", TitleBar)
-    TitleCover.Size = UDim2.new(1, 0, 0, 10)
-    TitleCover.Position = UDim2.new(0, 0, 1, -10)
-    TitleCover.BackgroundColor3 = COLORS.TITLE_BG
-    TitleCover.BorderSizePixel = 0
+local Info3 = Instance.new("TextLabel")
+Info3.Size = UDim2.new(1, -20, 0, 16)
+Info3.Position = UDim2.new(0, 10, 0, 106)
+Info3.BackgroundTransparency = 1
+Info3.Text = "Trigger: " .. TRIGGER_AREA .. " | Cooldown: " .. TP_COOLDOWN .. "s"
+Info3.TextColor3 = Color3.fromRGB(150, 150, 150)
+Info3.TextSize = 9
+Info3.Font = Enum.Font.Code
+Info3.Parent = Main
 
-    local Title = Instance.new("TextLabel", TitleBar)
-    Title.Size = UDim2.new(1, -50, 1, 0)
-    Title.Position = UDim2.new(0, 12, 0, 0)
-    Title.BackgroundTransparency = 1
-    Title.Text = "💰 Auto Grab — Highest First"
-    Title.TextColor3 = COLORS.GOLD
-    Title.TextSize = 13
-    Title.Font = Enum.Font.GothamBold
-    Title.TextXAlignment = Enum.TextXAlignment.Left
+local Status = Instance.new("TextLabel")
+Status.Size = UDim2.new(1, -20, 0, 16)
+Status.Position = UDim2.new(0, 10, 0, 124)
+Status.BackgroundTransparency = 1
+Status.Text = "Ready"
+Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+Status.TextSize = 9
+Status.Font = Enum.Font.Gotham
+Status.Parent = Main
 
-    local CloseBtn = Instance.new("TextButton", TitleBar)
-    CloseBtn.Size = UDim2.new(0, 25, 0, 25)
-    CloseBtn.Position = UDim2.new(1, -32, 0, 5)
-    CloseBtn.BackgroundColor3 = COLORS.RED
-    CloseBtn.Text = "✕"
-    CloseBtn.TextColor3 = COLORS.TEXT
-    CloseBtn.TextSize = 14
-    CloseBtn.Font = Enum.Font.GothamBold
-    Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
+local Info4 = Instance.new("TextLabel")
+Info4.Size = UDim2.new(1, -20, 0, 14)
+Info4.Position = UDim2.new(0, 10, 0, 142)
+Info4.BackgroundTransparency = 1
+Info4.Text = "Base: " .. tostring(START_POS)
+Info4.TextColor3 = Color3.fromRGB(150, 150, 150)
+Info4.TextSize = 8
+Info4.Font = Enum.Font.Code
+Info4.Parent = Main
 
-    -- Auto Grab Toggle
-    local lbl = Instance.new("TextLabel", Main)
-    lbl.Size = UDim2.new(1, -120, 0, 25)
-    lbl.Position = UDim2.new(0, 15, 0, 50)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = "💰 Auto Grab"
-    lbl.TextColor3 = COLORS.TEXT
-    lbl.TextSize = 14
-    lbl.Font = Enum.Font.GothamBold
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-
-    local state = Instance.new("TextLabel", Main)
-    state.Size = UDim2.new(0, 45, 0, 25)
-    state.Position = UDim2.new(1, -120, 0, 50)
-    state.BackgroundTransparency = 1
-    state.Text = "OFF"
-    state.TextColor3 = COLORS.RED
-    state.TextSize = 13
-    state.Font = Enum.Font.GothamBold
-    state.TextXAlignment = Enum.TextXAlignment.Right
-
-    local track = Instance.new("Frame", Main)
-    track.Size = UDim2.new(0, 50, 0, 26)
-    track.Position = UDim2.new(1, -65, 0, 50)
-    track.BackgroundColor3 = COLORS.TRACK_OFF
-    track.BorderSizePixel = 0
-    Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
-
-    local knob = Instance.new("Frame", track)
-    knob.Size = UDim2.new(0, 20, 0, 20)
-    knob.Position = UDim2.new(0, 3, 0.5, -10)
-    knob.BackgroundColor3 = COLORS.KNOB
-    knob.BorderSizePixel = 0
-    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
-
-    local btn = Instance.new("TextButton", Main)
-    btn.Size = UDim2.new(0, 110, 0, 36)
-    btn.Position = UDim2.new(1, -120, 0, 45)
-    btn.BackgroundTransparency = 1
-    btn.Text = ""
-
-    -- ESP Toggle
-    local espLbl = Instance.new("TextLabel", Main)
-    espLbl.Size = UDim2.new(1, -120, 0, 25)
-    espLbl.Position = UDim2.new(0, 15, 0, 80)
-    espLbl.BackgroundTransparency = 1
-    espLbl.Text = "📡 ESP Line to Best"
-    espLbl.TextColor3 = COLORS.TEXT
-    espLbl.TextSize = 14
-    espLbl.Font = Enum.Font.GothamBold
-    espLbl.TextXAlignment = Enum.TextXAlignment.Left
-
-    local espState = Instance.new("TextLabel", Main)
-    espState.Size = UDim2.new(0, 45, 0, 25)
-    espState.Position = UDim2.new(1, -120, 0, 80)
-    espState.BackgroundTransparency = 1
-    espState.Text = "ON"
-    espState.TextColor3 = COLORS.GREEN
-    espState.TextSize = 13
-    espState.Font = Enum.Font.GothamBold
-    espState.TextXAlignment = Enum.TextXAlignment.Right
-
-    local espTrack = Instance.new("Frame", Main)
-    espTrack.Size = UDim2.new(0, 50, 0, 26)
-    espTrack.Position = UDim2.new(1, -65, 0, 80)
-    espTrack.BackgroundColor3 = COLORS.GREEN
-    espTrack.BorderSizePixel = 0
-    Instance.new("UICorner", espTrack).CornerRadius = UDim.new(1, 0)
-
-    local espKnob = Instance.new("Frame", espTrack)
-    espKnob.Size = UDim2.new(0, 20, 0, 20)
-    espKnob.Position = UDim2.new(0, 27, 0.5, -10)
-    espKnob.BackgroundColor3 = COLORS.KNOB
-    espKnob.BorderSizePixel = 0
-    Instance.new("UICorner", espKnob).CornerRadius = UDim.new(1, 0)
-
-    local espBtn = Instance.new("TextButton", Main)
-    espBtn.Size = UDim2.new(0, 110, 0, 36)
-    espBtn.Position = UDim2.new(1, -120, 0, 75)
-    espBtn.BackgroundTransparency = 1
-    espBtn.Text = ""
-
-    -- Info lines
-    local InfoLbl = Instance.new("TextLabel", Main)
-    InfoLbl.Size = UDim2.new(1, -30, 0, 18)
-    InfoLbl.Position = UDim2.new(0, 15, 0, 115)
-    InfoLbl.BackgroundTransparency = 1
-    InfoLbl.Text = "🎯 Next: --"
-    InfoLbl.TextColor3 = COLORS.CYAN
-    InfoLbl.TextSize = 11
-    InfoLbl.Font = Enum.Font.GothamBold
-    InfoLbl.TextXAlignment = Enum.TextXAlignment.Left
-
-    local QueueLbl = Instance.new("TextLabel", Main)
-    QueueLbl.Size = UDim2.new(1, -30, 0, 18)
-    QueueLbl.Position = UDim2.new(0, 15, 0, 133)
-    QueueLbl.BackgroundTransparency = 1
-    QueueLbl.Text = "📋 Queue: 0 eggs"
-    QueueLbl.TextColor3 = COLORS.YELLOW
-    QueueLbl.TextSize = 11
-    QueueLbl.Font = Enum.Font.Gotham
-    QueueLbl.TextXAlignment = Enum.TextXAlignment.Left
-
-    local Status = Instance.new("TextLabel", Main)
-    Status.Size = UDim2.new(1, -30, 0, 18)
-    Status.Position = UDim2.new(0, 15, 0, 151)
-    Status.BackgroundTransparency = 1
-    Status.Text = "Min: 50.00M | Highest First"
-    Status.TextColor3 = COLORS.YELLOW
-    Status.TextSize = 10
-    Status.Font = Enum.Font.Gotham
-    Status.TextXAlignment = Enum.TextXAlignment.Left
-
-    local Stats = Instance.new("TextLabel", Main)
-    Stats.Size = UDim2.new(1, -30, 0, 18)
-    Stats.Position = UDim2.new(0, 15, 0, 169)
-    Stats.BackgroundTransparency = 1
-    Stats.Text = "✅ Grabbed: 0"
-    Stats.TextColor3 = COLORS.GREEN
-    Stats.TextSize = 10
-    Stats.Font = Enum.Font.GothamBold
-    Stats.TextXAlignment = Enum.TextXAlignment.Left
-
-    local LastLbl = Instance.new("TextLabel", Main)
-    LastLbl.Size = UDim2.new(1, -30, 0, 18)
-    LastLbl.Position = UDim2.new(0, 15, 0, 189)
-    LastLbl.BackgroundTransparency = 1
-    LastLbl.Text = "Last: --"
-    LastLbl.TextColor3 = COLORS.GREEN
-    LastLbl.TextSize = 10
-    LastLbl.Font = Enum.Font.Gotham
-    LastLbl.TextXAlignment = Enum.TextXAlignment.Left
-
-    return {
-        ScreenGui = ScreenGui, Main = Main,
-        track = track, knob = knob, state = state, btn = btn,
-        espTrack = espTrack, espKnob = espKnob, espState = espState, espBtn = espBtn,
-        Status = Status, InfoLbl = InfoLbl, QueueLbl = QueueLbl,
-        Stats = Stats, LastLbl = LastLbl, CloseBtn = CloseBtn
-    }
-end
-
-local ui = createUI()
-
-local function setToggle(track, knob, state, on)
-    track.BackgroundColor3 = on and COLORS.GREEN or COLORS.TRACK_OFF
-    knob.Position = on and UDim2.new(0, 27, 0.5, -10) or UDim2.new(0, 3, 0.5, -10)
-    state.Text = on and "ON" or "OFF"
-    state.TextColor3 = on and COLORS.GREEN or COLORS.RED
-end
-
--- ESP Toggle click
-ui.espBtn.MouseButton1Click:Connect(function()
-    State.espEnabled = not State.espEnabled
-    setToggle(ui.espTrack, ui.espKnob, ui.espState, State.espEnabled)
-    if not State.espEnabled then
-        if ESP.line then ESP.line.Transparency = 1 end
-    end
-end)
-
--- Live info update
+-- ============ LIVE INFO ============
 task.spawn(function()
     while true do
-        task.wait(0.5)
-        if State.running then
-            local eggs = findAllHighValueEggs()
-            if #eggs > 0 then
-                local top = eggs[1]
-                ui.InfoLbl.Text = ("🎯 Next: %s /s (%s)"):format(
-                    formatNumber(top.value), top.rec.AreaId)
-                ui.QueueLbl.Text = ("📋 Queue: %d eggs (descending)"):format(#eggs)
-            else
-                ui.InfoLbl.Text = "🎯 Next: -- (waiting)"
-                ui.QueueLbl.Text = "📋 Queue: 0 eggs"
+        task.wait(0.3)
+        if antiFieldEnabled then
+            local char = LocalPlayer.Character
+            if char then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    local carrying = hasCarriedEgg()
+                    local currentArea = getCurrentArea() or "Unknown"
+                    local cooldownLeft = math.max(0, TP_COOLDOWN - (tick() - teleportCooldown))
+                    
+                    Info.Text = "Current Area: " .. currentArea
+                    Info.TextColor3 = currentArea == TRIGGER_AREA and Color3.fromRGB(255, 100, 100) or Color3.fromRGB(100, 255, 100)
+                    
+                    Info2.Text = string.format("Carrying: %s | Speed: %.0f",
+                        carrying and "YES ✅" or "NO", hum.WalkSpeed)
+                    Info2.TextColor3 = carrying and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(150, 150, 150)
+                    
+                    if cooldownLeft > 0 then
+                        Status.Text = string.format("⏱️ Cooldown: %.1fs", cooldownLeft)
+                        Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+                    else
+                        Status.Text = "✅ Ready"
+                        Status.TextColor3 = Color3.fromRGB(100, 255, 100)
+                    end
+                end
             end
         end
     end
 end)
 
--- Auto Grab Toggle click
-ui.btn.MouseButton1Click:Connect(function()
-    if not State.running then
-        if not loadModules() then
-            ui.Status.Text = "❌ EggState not found"
-            ui.Status.TextColor3 = COLORS.RED
-            return
+-- ============ TOGGLE ============
+ToggleBtn.MouseButton1Click:Connect(function()
+    antiFieldEnabled = not antiFieldEnabled
+
+    if antiFieldEnabled then
+        ToggleBtn.Text = "AUTO-TP: ON"
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+
+        local ok, err = startAntiField()
+        if not ok then
+            Info.Text = "❌ " .. tostring(err)
+            Info.TextColor3 = Color3.fromRGB(255, 100, 100)
+            antiFieldEnabled = false
+            ToggleBtn.Text = "AUTO-TP: OFF"
+            ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
         end
-        setToggle(ui.track, ui.knob, ui.state, true)
-        ui.Status.Text = "Min: 50.00M | Highest First"
-        ui.Status.TextColor3 = COLORS.GREEN
-        task.spawn(mainLoop)
     else
-        State.running = false
-        setToggle(ui.track, ui.knob, ui.state, false)
-        ui.Status.Text = "Stopped"
-        ui.Status.TextColor3 = COLORS.YELLOW
-    end
-end)
-
-ui.CloseBtn.MouseButton1Click:Connect(function()
-    State.running = false
-    clearESP()
-    ui.ScreenGui:Destroy()
-end)
-
--- ESP Line updater
-RunService.RenderStepped:Connect(function()
-    if State.espEnabled and State.running then
-        updateESPLine()
-    end
-end)
-
--- Auto-init
-task.spawn(function()
-    task.wait(0.5)
-    if loadModules() then
-        ui.Status.Text = "✅ Ready | Min: 50.00M"
-        ui.Status.TextColor3 = COLORS.GREEN
-    else
-        ui.Status.Text = "⚠️ Waiting for game..."
-        ui.Status.TextColor3 = COLORS.YELLOW
+        ToggleBtn.Text = "AUTO-TP: OFF"
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        stopAntiField()
     end
 end)
