@@ -1,11 +1,7 @@
-
--- ============================================
--- STEP 1: CUSTOM SPEED BYPASS (300, with ON/OFF)
--- ============================================
 local speedBypass = {
     RunService = game:GetService("RunService"),
     Players = game:GetService("Players"),
-    speed = 300,
+    speed = 330,
     active = false,
 }
 
@@ -44,25 +40,18 @@ end
 function speedBypass:initbypass()
     local LP = self.Players.LocalPlayer
     if not LP then return warn("failed to get localplayer") end
-
     if not getgc then LP:Kick("UNSUPPORT EXECUTOR MISSING getgc") end
     if not hookfunction then LP:Kick("UNSUPPORT EXECUTOR MISSING hookfunction") end
     if not islclosure then LP:Kick("UNSUPPORT EXECUTOR MISSING islclosure") end
-
     local func3 = self:findfunction(19, 634)
     if not func3 then return warn("failed to get function 3") end
-
     local v7 = debug.getupvalue(func3, 2)
     if not v7 then return warn("failed to get v7") end
-
     local hookedfunc3
     hookedfunc3 = self:safehook(v7, function(p1, p2)
-        if p2 and typeof(p2) == "table" then
-            setmetatable(p2, {})
-        end
+        if p2 and typeof(p2) == "table" then setmetatable(p2, {}) end
         return hookedfunc3(p1, p2)
     end)
-
     self.speedconn = self.RunService.Heartbeat:Connect(function()
         if not self.active then return end
         local char = LP.Character
@@ -71,11 +60,9 @@ function speedBypass:initbypass()
         if not hum then return end
         hum.WalkSpeed = self.speed
     end)
-
     print("[SpeedBypass] Hook installed (300, toggleable)")
     return true
 end
-
 speedBypass:initbypass()
 
 -- ============================================
@@ -132,13 +119,11 @@ end
 function utility:startInstantPickup()
     self.LocalPlayer = self.Players.LocalPlayer
     if not self.LocalPlayer then return warn('no localplayer') end
-
     self.instantConn = self:bind(self.ProximityPromptService.PromptButtonHoldBegan, function(ProximityPrompt, Player)
         if Player == self.LocalPlayer and tostring(ProximityPrompt) == "CarryAreaEgg" then
             ProximityPrompt.HoldDuration = 0
         end
     end)
-
     return self.instantConn ~= nil
 end
 
@@ -160,16 +145,12 @@ function utility:startAntiRagdoll()
     self.LocalPlayer = self.Players.LocalPlayer
     if not self.LocalPlayer then return false, "No LocalPlayer" end
     if not getconnections then return false, "Missing getconnections" end
-
     self.Packages = self.ReplicatedStorage:FindFirstChild("Packages")
     if not self.Packages then return false, "No Packages" end
-
     self.Networking = self.Packages:FindFirstChild("Networking")
     if not self.Networking then return false, "No Networking" end
-
     self.RigSync = self.Networking:FindFirstChild("RE/RigSync/Refresh")
     if not self.RigSync then return false, "No RE/RigSync/Refresh" end
-
     local conns = getconnections(self.RigSync.OnClientEvent)
     if conns then
         for _, conn in next, conns do
@@ -179,35 +160,26 @@ function utility:startAntiRagdoll()
             end)
         end
     end
-
     utility.antiRagdollConn = self.RunService.Heartbeat:Connect(function()
         if not utility.antiRagdollEnabled then return end
-
         local char = self.LocalPlayer.Character
         if not char then return end
         local hum = char:FindFirstChildOfClass("Humanoid")
         if not hum then return end
-
         for _, obj in next, char:GetDescendants() do
             if obj:IsA("RagdollConstraint") or obj:IsA("BallSocketConstraint") then
                 pcall(function() obj:Destroy() end)
             end
         end
-
-        if hum:GetState() == Enum.HumanoidStateType.Physics or
-           hum:GetState() == Enum.HumanoidStateType.Ragdoll then
-            pcall(function()
-                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-            end)
+        if hum:GetState() == Enum.HumanoidStateType.Physics or hum:GetState() == Enum.HumanoidStateType.Ragdoll then
+            pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
         end
-
         for _, joint in next, char:GetDescendants() do
             if joint:IsA("Motor6D") and joint.Enabled == false then
                 pcall(function() joint.Enabled = true end)
             end
         end
     end)
-
     return true
 end
 
@@ -229,7 +201,6 @@ utility.trapConns = {}
 function utility:destroyTraps()
     local debris = self.Workspace:FindFirstChild("__DEBRIS")
     if not debris then return end
-
     for _, obj in next, debris:GetChildren() do
         if obj.Name == "PlayerTrap" then
             pcall(function() obj:Destroy() end)
@@ -241,9 +212,7 @@ end
 function utility:startAntiTrap()
     self.LocalPlayer = self.Players.LocalPlayer
     if not self.LocalPlayer then return false, "No LocalPlayer" end
-
     self:destroyTraps()
-
     local debris = self.Workspace:FindFirstChild("__DEBRIS")
     if debris then
         table.insert(utility.trapConns, debris.ChildAdded:Connect(function(child)
@@ -253,7 +222,6 @@ function utility:startAntiTrap()
             end
         end))
     end
-
     table.insert(utility.trapConns, self.Workspace.ChildAdded:Connect(function(child)
         if utility.antiTrapEnabled and child.Name == "__DEBRIS" then
             child.ChildAdded:Connect(function(trap)
@@ -263,44 +231,32 @@ function utility:startAntiTrap()
             end)
         end
     end))
-
     utility.antiTrapConn = self.RunService.Heartbeat:Connect(function()
         if not utility.antiTrapEnabled then return end
         self:destroyTraps()
-
         local char = self.LocalPlayer.Character
         if not char then return end
         local hum = char:FindFirstChildOfClass("Humanoid")
         if not hum then return end
-
         if char:GetAttribute("IsTrapped") == true then
             pcall(function()
                 hum.PlatformStand = false
                 hum:ChangeState(Enum.HumanoidStateType.GettingUp)
             end)
         end
-
         if hum.PlatformStand then
             pcall(function() hum.PlatformStand = false end)
         end
-
         local state = hum:GetState()
-        if state == Enum.HumanoidStateType.Physics or
-           state == Enum.HumanoidStateType.Ragdoll or
-           state == Enum.HumanoidStateType.FallingDown or
-           state == Enum.HumanoidStateType.PlatformStanding then
-            pcall(function()
-                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-            end)
+        if state == Enum.HumanoidStateType.Physics or state == Enum.HumanoidStateType.Ragdoll or state == Enum.HumanoidStateType.FallingDown or state == Enum.HumanoidStateType.PlatformStanding then
+            pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
         end
-
         for _, joint in next, char:GetDescendants() do
             if joint:IsA("Motor6D") and joint.Enabled == false then
                 pcall(function() joint.Enabled = true end)
             end
         end
     end)
-
     return true
 end
 
@@ -392,7 +348,6 @@ end
 
 function utility:calcEggValue(rec)
     if not rec then return 0 end
-
     if self.AssetEarnings then
         local ok, rate = pcall(function()
             local item = {
@@ -406,24 +361,20 @@ function utility:calcEggValue(rec)
             return rate
         end
     end
-
     local rarity = self:getRarityNumber(rec)
     local scale = self:getAssetScale(rec)
     local mutMult = 1
-
     if rec.Mutations and #rec.Mutations > 0 and self.Mutations then
         pcall(function()
             local item = { Mutations = rec.Mutations }
             mutMult = self.Mutations.EarningsFor(item) or 1
         end)
     end
-
     local baseRate = 0
     if self.AssetsDir then
         local dir = self.AssetsDir[rec.AssetCategory]
         if dir then baseRate = tonumber(dir.EarningRate) or 0 end
     end
-
     local scaleFactor = scale <= 5 and scale ^ 1.85 or (scale / 5) ^ 1.2 * 19.637875755794113
     local value = baseRate * scaleFactor * mutMult
     return math.max(1, math.round(value))
@@ -433,18 +384,15 @@ function utility:findAllHighValueEggs()
     if not self.EggState then return {} end
     local ok, fieldEggs = pcall(function() return self.EggState.ReadFieldEggs() end)
     if not ok or not fieldEggs or not fieldEggs.Records then return {} end
-
     local eggs = {}
     local minValue = 5e7
     local minArea = 10
-
     for _, rec in ipairs(fieldEggs.Records) do
         if rec.State == "Slot" or rec.State == "Dropped" then
             local areaIdx = nil
             for i, name in ipairs(AREA_NAMES) do
                 if rec.AreaId == name then areaIdx = i break end
             end
-
             if areaIdx and areaIdx >= minArea then
                 local value = self:calcEggValue(rec)
                 if value >= minValue then
@@ -453,22 +401,18 @@ function utility:findAllHighValueEggs()
             end
         end
     end
-
     table.sort(eggs, function(a, b) return a.value > b.value end)
     return eggs
 end
 
 function utility:fastGrabEgg(rec)
     if not rec then return false end
-
     local ok1, res1 = pcall(function()
         return self.EggState.CarryFieldEgg(rec.Uid)
     end)
     if ok1 and res1 == true then return true end
-
     local eggPos = self:getEggPos(rec)
     if not eggPos then return false end
-
     local CarryAreaEggs = self.Workspace:QueryDescendants("#CarryAreaEgg")
     local closetprompt, closetdist = nil, math.huge
     for _, prompt in next, CarryAreaEggs do
@@ -481,7 +425,6 @@ function utility:fastGrabEgg(rec)
             end
         end
     end
-
     if closetprompt and fireproximityprompt then
         pcall(function()
             closetprompt.HoldDuration = 0
@@ -489,7 +432,6 @@ function utility:fastGrabEgg(rec)
         end)
         return true
     end
-
     return false
 end
 
@@ -497,36 +439,29 @@ function utility:startAutoGrab()
     if not self:loadEggModules() then
         return false, "EggState not found"
     end
-
     self.autoGrabLastGrabbed = {}
     self.autoGrabCount = 0
     self.autoGrabLastValue = 0
-
     local checkDelay = 0.1
     local grabCooldown = 2
     local postGrabWait = 0.3
-
     self.autoGrabConn = self.RunService.Heartbeat:Connect(function()
         if not self.autoGrabEnabled then return end
-
         local now = tick()
         if self.autoGrabLastCheck and (now - self.autoGrabLastCheck) < checkDelay then
             return
         end
         self.autoGrabLastCheck = now
-
         local eggs = self:findAllHighValueEggs()
         if #eggs > 0 then
+            self:setESPTarget(eggs[1].rec)
             for _, item in ipairs(eggs) do
                 if not self.autoGrabEnabled then break end
-
                 local rec = item.rec
                 local value = item.value
                 local lastTime = self.autoGrabLastGrabbed[rec.Uid]
-
                 if not lastTime or (tick() - lastTime) > grabCooldown then
                     self.autoGrabLastGrabbed[rec.Uid] = tick()
-
                     local ok = self:fastGrabEgg(rec)
                     if ok then
                         self.autoGrabCount = self.autoGrabCount + 1
@@ -540,9 +475,11 @@ function utility:startAutoGrab()
                     end
                 end
             end
+        else
+            self:setESPTarget(nil)
         end
     end)
-
+    self:createESPLine()
     return true
 end
 
@@ -550,6 +487,118 @@ function utility:stopAutoGrab()
     if self.autoGrabConn then
         self.autoGrabConn:Disconnect()
         self.autoGrabConn = nil
+    end
+end
+
+-- ============================================
+-- STEP 8.5: ESP BEST EGG
+-- ============================================
+utility.espEnabled = false
+utility.espLine = nil
+utility.espTargetPart = nil
+utility.espTargetPos = nil
+utility.ESP_MAX_DISTANCE = 10000
+
+function utility:createESPLine()
+    if self.espLine then return end
+    local line = Instance.new("Part")
+    line.Name = "ESP_BestEggLine"
+    line.Anchored = true
+    line.CanCollide = false
+    line.CanQuery = false
+    line.CanTouch = false
+    line.Transparency = 0.3
+    line.Color = Color3.fromRGB(255, 215, 0)
+    line.Material = Enum.Material.Neon
+    line.Size = Vector3.new(0.2, 0.2, 1)
+    line.Parent = self.Workspace
+    local mesh = Instance.new("SpecialMesh")
+    mesh.MeshType = Enum.MeshType.Brick
+    mesh.Scale = Vector3.new(1, 1, 1)
+    mesh.Parent = line
+    self.espLine = line
+end
+
+function utility:updateESPLine()
+    if not self.espEnabled then
+        if self.espLine then self.espLine.Transparency = 1 end
+        return
+    end
+    if not self.espLine then self:createESPLine() end
+    if not self.espLine then return end
+    local char = self.Players.LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        self.espLine.Transparency = 1
+        return
+    end
+    if not self.espTargetPos then
+        self.espLine.Transparency = 1
+        return
+    end
+    if self.espTargetPart and not self.espTargetPart.Parent then
+        self.espTargetPart = nil
+        self.espTargetPos = nil
+        self.espLine.Transparency = 1
+        return
+    end
+    local startPos = hrp.Position
+    local endPos = self.espTargetPos
+    local totalDist = (endPos - startPos).Magnitude
+    if totalDist > self.ESP_MAX_DISTANCE then
+        local direction = (endPos - startPos).Unit
+        endPos = startPos + direction * self.ESP_MAX_DISTANCE
+        totalDist = self.ESP_MAX_DISTANCE
+    end
+    local midPos = (startPos + endPos) / 2
+    self.espLine.CFrame = CFrame.new(midPos, endPos)
+    local safeSize = math.min(totalDist, 2048)
+    self.espLine.Size = Vector3.new(0.2, 0.2, safeSize)
+    local mesh = self.espLine:FindFirstChildOfClass("SpecialMesh")
+    if mesh then
+        local scaleZ = totalDist / safeSize
+        mesh.Scale = Vector3.new(1, 1, scaleZ)
+    end
+    self.espLine.Transparency = 0.3
+end
+
+function utility:setESPTarget(rec)
+    if not rec then
+        self.espTargetPart = nil
+        self.espTargetPos = nil
+        return
+    end
+    local eggPos = self:getEggPos(rec)
+    if eggPos then
+        self.espTargetPos = eggPos
+        local model = self.Workspace:FindFirstChild(rec.Uid, true)
+        if model then
+            self.espTargetPart = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+        end
+    end
+end
+
+function utility:clearESP()
+    if self.espLine then
+        self.espLine:Destroy()
+        self.espLine = nil
+    end
+    self.espTargetPart = nil
+    self.espTargetPos = nil
+end
+
+function utility:startESP()
+    if not self:loadEggModules() then
+        return false, "EggState not found"
+    end
+    self:createESPLine()
+    return true
+end
+
+function utility:stopESP()
+    self.espEnabled = false
+    if self.espLine then
+        self.espLine.Transparency = 1
     end
 end
 
@@ -572,26 +621,22 @@ local function createUI()
     if utility.CoreGui:FindFirstChild("StealEggUI") then
         utility.CoreGui.StealEggUI:Destroy()
     end
-
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "StealEggUI"
     ScreenGui.ResetOnSpawn = false
     ScreenGui.Parent = utility.CoreGui
-
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 220, 0, 290)
-    Main.Position = UDim2.new(0.5, -110, 0.5, -145)
+    Main.Size = UDim2.new(0, 220, 0, 330)
+    Main.Position = UDim2.new(0.5, -110, 0.5, -165)
     Main.BackgroundColor3 = COLORS.BG
     Main.BorderSizePixel = 0
     Main.Active = true
     Main.Draggable = true
     Main.Parent = ScreenGui
-
     local c1 = Instance.new("UICorner", Main)
     c1.CornerRadius = UDim.new(0, 8)
     local s1 = Instance.new("UIStroke", Main)
     s1.Color = COLORS.STROKE
-
     local TitleBar = Instance.new("Frame", Main)
     TitleBar.Size = UDim2.new(1, 0, 0, 28)
     TitleBar.BackgroundColor3 = COLORS.TITLE_BG
@@ -603,7 +648,6 @@ local function createUI()
     TitleCover.Position = UDim2.new(0, 0, 1, -8)
     TitleCover.BackgroundColor3 = COLORS.TITLE_BG
     TitleCover.BorderSizePixel = 0
-
     local Title = Instance.new("TextLabel", TitleBar)
     Title.Size = UDim2.new(1, -40, 1, 0)
     Title.Position = UDim2.new(0, 10, 0, 0)
@@ -613,7 +657,6 @@ local function createUI()
     Title.TextSize = 12
     Title.Font = Enum.Font.GothamBold
     Title.TextXAlignment = Enum.TextXAlignment.Left
-
     local CloseBtn = Instance.new("TextButton", TitleBar)
     CloseBtn.Size = UDim2.new(0, 20, 0, 20)
     CloseBtn.Position = UDim2.new(1, -25, 0, 4)
@@ -624,7 +667,6 @@ local function createUI()
     CloseBtn.Font = Enum.Font.GothamBold
     local c3 = Instance.new("UICorner", CloseBtn)
     c3.CornerRadius = UDim.new(0, 5)
-
     local function makeToggle(y, label, icon)
         local lbl = Instance.new("TextLabel", Main)
         lbl.Size = UDim2.new(1, -105, 0, 22)
@@ -635,7 +677,6 @@ local function createUI()
         lbl.TextSize = 11
         lbl.Font = Enum.Font.GothamBold
         lbl.TextXAlignment = Enum.TextXAlignment.Left
-
         local state = Instance.new("TextLabel", Main)
         state.Size = UDim2.new(0, 35, 0, 22)
         state.Position = UDim2.new(1, -100, 0, y)
@@ -645,7 +686,6 @@ local function createUI()
         state.TextSize = 10
         state.Font = Enum.Font.GothamBold
         state.TextXAlignment = Enum.TextXAlignment.Right
-
         local track = Instance.new("Frame", Main)
         track.Size = UDim2.new(0, 40, 0, 22)
         track.Position = UDim2.new(1, -55, 0, y)
@@ -653,7 +693,6 @@ local function createUI()
         track.BorderSizePixel = 0
         local tc = Instance.new("UICorner", track)
         tc.CornerRadius = UDim.new(1, 0)
-
         local knob = Instance.new("Frame", track)
         knob.Size = UDim2.new(0, 16, 0, 16)
         knob.Position = UDim2.new(0, 3, 0.5, -8)
@@ -661,67 +700,60 @@ local function createUI()
         knob.BorderSizePixel = 0
         local kc = Instance.new("UICorner", knob)
         kc.CornerRadius = UDim.new(1, 0)
-
         local btn = Instance.new("TextButton", Main)
         btn.Size = UDim2.new(0, 105, 0, 30)
         btn.Position = UDim2.new(1, -110, 0, y - 4)
         btn.BackgroundTransparency = 1
         btn.Text = ""
-
         return {track = track, knob = knob, state = state, btn = btn}
     end
-
     local speedToggle = makeToggle(38, "Speed Bypass (300)", "⚡")
     local pickupToggle = makeToggle(72, "Instant Pickup", "⚡")
     local ragdollToggle = makeToggle(106, "Anti-Ragdoll", "🛡️")
     local antiTrapToggle = makeToggle(140, "Anti-Trap", "🪤")
     local autoGrabToggle = makeToggle(174, "Auto Grab 50M+", "💰")
-
+    local espToggle = makeToggle(208, "ESP Best Egg", "📡")
     local GrabInfo = Instance.new("TextLabel", Main)
     GrabInfo.Size = UDim2.new(1, -20, 0, 16)
-    GrabInfo.Position = UDim2.new(0, 12, 0, 202)
+    GrabInfo.Position = UDim2.new(0, 12, 0, 236)
     GrabInfo.BackgroundTransparency = 1
     GrabInfo.Text = "Next: -- | Grabbed: 0"
     GrabInfo.TextColor3 = COLORS.GOLD
     GrabInfo.TextSize = 9
     GrabInfo.Font = Enum.Font.Gotham
     GrabInfo.TextXAlignment = Enum.TextXAlignment.Left
-
     local Status = Instance.new("TextLabel", Main)
     Status.Size = UDim2.new(1, -20, 0, 16)
-    Status.Position = UDim2.new(0, 12, 0, 220)
+    Status.Position = UDim2.new(0, 12, 0, 254)
     Status.BackgroundTransparency = 1
     Status.Text = "Status: Ready"
     Status.TextColor3 = Color3.fromRGB(255, 200, 0)
     Status.TextSize = 10
     Status.Font = Enum.Font.Gotham
     Status.TextXAlignment = Enum.TextXAlignment.Left
-
     local FlowHint = Instance.new("TextLabel", Main)
     FlowHint.Size = UDim2.new(1, -20, 0, 14)
-    FlowHint.Position = UDim2.new(0, 12, 0, 242)
+    FlowHint.Position = UDim2.new(0, 12, 0, 276)
     FlowHint.BackgroundTransparency = 1
     FlowHint.Text = "💡 1B → 500M → 100M → 50M"
     FlowHint.TextColor3 = Color3.fromRGB(100, 200, 255)
     FlowHint.TextSize = 9
     FlowHint.Font = Enum.Font.Gotham
     FlowHint.TextXAlignment = Enum.TextXAlignment.Left
-
     local StatsLine = Instance.new("TextLabel", Main)
     StatsLine.Size = UDim2.new(1, -20, 0, 14)
-    StatsLine.Position = UDim2.new(0, 12, 0, 260)
+    StatsLine.Position = UDim2.new(0, 12, 0, 294)
     StatsLine.BackgroundTransparency = 1
     StatsLine.Text = "Min: 50M | Area: 10+"
     StatsLine.TextColor3 = Color3.fromRGB(150, 150, 160)
     StatsLine.TextSize = 9
     StatsLine.Font = Enum.Font.Gotham
     StatsLine.TextXAlignment = Enum.TextXAlignment.Left
-
     return {
         ScreenGui = ScreenGui, Main = Main,
         speedToggle = speedToggle, pickupToggle = pickupToggle,
         ragdollToggle = ragdollToggle, antiTrapToggle = antiTrapToggle,
-        autoGrabToggle = autoGrabToggle,
+        autoGrabToggle = autoGrabToggle, espToggle = espToggle,
         GrabInfo = GrabInfo, Status = Status,
         CloseBtn = CloseBtn
     }
@@ -741,11 +773,9 @@ end
 
 -- ⚡ Speed Bypass
 utility.speedEnabled = false
-
 ui.speedToggle.btn.MouseButton1Click:Connect(function()
     utility.speedEnabled = not utility.speedEnabled
     setToggle(ui.speedToggle, utility.speedEnabled)
-
     if utility.speedEnabled then
         speedBypass.active = true
         ui.Status.Text = "⚡ Speed ON (300)"
@@ -764,18 +794,16 @@ end)
 
 -- ⚡ Instant Pickup
 utility.pickupEnabled = false
-
 ui.pickupToggle.btn.MouseButton1Click:Connect(function()
     utility.pickupEnabled = not utility.pickupEnabled
     setToggle(ui.pickupToggle, utility.pickupEnabled)
-
     if utility.pickupEnabled then
         local ok = utility:startInstantPickup()
         if ok then
             ui.Status.Text = "⚡ Instant Pickup ON"
             ui.Status.TextColor3 = COLORS.GREEN
         else
-            ui.Status.Text = "❌ Pickup failed"
+            ui.Status.Text = "ui.Status.Text = "❌ Pickup failed"
             ui.Status.TextColor3 = COLORS.RED
             utility.pickupEnabled = false
             setToggle(ui.pickupToggle, false)
@@ -789,7 +817,6 @@ end)
 
 -- 🛡️ Anti-Ragdoll
 utility.antiRagdollEnabled = false
-
 ui.ragdollToggle.btn.MouseButton1Click:Connect(function()
     utility.antiRagdollEnabled = not utility.antiRagdollEnabled
     setToggle(ui.ragdollToggle, utility.antiRagdollEnabled)
@@ -814,7 +841,6 @@ end)
 
 -- 🪤 Anti-Trap
 utility.antiTrapEnabled = false
-
 ui.antiTrapToggle.btn.MouseButton1Click:Connect(function()
     utility.antiTrapEnabled = not utility.antiTrapEnabled
     setToggle(ui.antiTrapToggle, utility.antiTrapEnabled)
@@ -860,6 +886,29 @@ ui.autoGrabToggle.btn.MouseButton1Click:Connect(function()
     end
 end)
 
+-- 📡 ESP Best Egg
+ui.espToggle.btn.MouseButton1Click:Connect(function()
+    utility.espEnabled = not utility.espEnabled
+    setToggle(ui.espToggle, utility.espEnabled)
+
+    if utility.espEnabled then
+        local ok, err = utility:startESP()
+        if ok then
+            ui.Status.Text = "📡 ESP Best Egg ON"
+            ui.Status.TextColor3 = COLORS.GREEN
+        else
+            ui.Status.Text = "❌ " .. tostring(err)
+            ui.Status.TextColor3 = COLORS.RED
+            utility.espEnabled = false
+            setToggle(ui.espToggle, false)
+        end
+    else
+        utility:stopESP()
+        ui.Status.Text = "📡 ESP Best Egg OFF"
+        ui.Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+    end
+end)
+
 -- Live update para sa GrabInfo
 utility.RunService.Heartbeat:Connect(function()
     if not utility.autoGrabEnabled then return end
@@ -880,6 +929,13 @@ utility.RunService.Heartbeat:Connect(function()
     end
 end)
 
+-- ESP Line updater (every frame)
+utility.RunService.RenderStepped:Connect(function()
+    if utility.espEnabled then
+        utility:updateESPLine()
+    end
+end)
+
 -- Close button
 ui.CloseBtn.MouseButton1Click:Connect(function()
     utility.speedEnabled = false
@@ -887,11 +943,13 @@ ui.CloseBtn.MouseButton1Click:Connect(function()
     utility.antiRagdollEnabled = false
     utility.antiTrapEnabled = false
     utility.autoGrabEnabled = false
+    utility.espEnabled = false
     speedBypass.active = false
     utility:stopInstantPickup()
     utility:stopAntiRagdoll()
     utility:stopAntiTrap()
     utility:stopAutoGrab()
+    utility:clearESP()
     ui.ScreenGui:Destroy()
 end)
 
