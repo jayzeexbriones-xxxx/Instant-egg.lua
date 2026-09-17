@@ -1,98 +1,125 @@
+-- ==========================================
+-- UNDERGROUND SCRIPT WITH UI TOGGLE
+-- ==========================================
+
 local Players = game:GetService("Players")
-local CoreGui = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
-local enabled = false
-local originalCFrame = nil
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local rootPart = character:WaitForChild("HumanoidRootPart")
 
-local function getHRP()
-    local char = player.Character or player.CharacterAdded:Wait()
-    return char:WaitForChild("HumanoidRootPart")
-end
+-- SETTINGS
+local OFFSET = 5 -- Ilang studs pababa? (5 studs default)
+local isUnderground = false -- Status ng script
 
-local function setUnderground(state)
-    local hrp = getHRP()
+-- Kunin ang Original Y Position
+local originalY = rootPart.Position.Y 
+local targetY = originalY - OFFSET
 
-    if state then
-        -- Save original position
-        originalCFrame = hrp.CFrame
+-- ==========================================
+-- GUMAWA NG UI
+-- ==========================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "UndergroundUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = player:WaitForChild("PlayerGui")
 
-        -- 3 studs underground
-        hrp.CFrame = hrp.CFrame * CFrame.new(0, -3, 0)
-    else
-        -- Return to original position
-        if originalCFrame then
-            hrp.CFrame = originalCFrame
-            originalCFrame = nil
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 150, 0, 50)
+MainFrame.Position = UDim2.new(0.5, -75, 0.2, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true -- Pwedeng hilahin
+MainFrame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = MainFrame
+
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Size = UDim2.new(1, -20, 1, -20)
+ToggleBtn.Position = UDim2.new(0, 10, 0, 10)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50) -- Red = Off
+ToggleBtn.Text = "UNDERGROUND: OFF"
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.TextSize = 12
+ToggleBtn.Parent = MainFrame
+
+local BtnCorner = Instance.new("UICorner")
+BtnCorner.CornerRadius = UDim.new(0, 6)
+BtnCorner.Parent = ToggleBtn
+
+-- ==========================================
+-- LOGIC NG SCRIPT
+-- ==========================================
+
+local function SetCollision(state)
+    for _, part in pairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = state
         end
     end
 end
 
--- UI
-local gui = Instance.new("ScreenGui")
-gui.Name = "UndergroundUI"
-gui.ResetOnSpawn = false
-gui.Parent = CoreGui
-
-local frame = Instance.new("Frame")
-frame.Size = UDim2.fromOffset(220, 110)
-frame.Position = UDim2.new(0.5, -110, 0.5, -55)
-frame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-frame.BorderSizePixel = 0
-frame.Active = true
-frame.Draggable = true
-frame.Parent = gui
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 12)
-corner.Parent = frame
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 40)
-title.BackgroundTransparency = 1
-title.Text = "UNDERGROUND"
-title.TextColor3 = Color3.new(1, 1, 1)
-title.TextSize = 17
-title.Font = Enum.Font.GothamBold
-title.Parent = frame
-
-local button = Instance.new("TextButton")
-button.Size = UDim2.new(1, -30, 0, 45)
-button.Position = UDim2.fromOffset(15, 50)
-button.BackgroundColor3 = Color3.fromRGB(150, 35, 35)
-button.Text = "OFF"
-button.TextColor3 = Color3.new(1, 1, 1)
-button.TextSize = 18
-button.Font = Enum.Font.GothamBold
-button.Parent = frame
-
-local buttonCorner = Instance.new("UICorner")
-buttonCorner.CornerRadius = UDim.new(0, 8)
-buttonCorner.Parent = button
-
-button.MouseButton1Click:Connect(function()
-    enabled = not enabled
-
-    setUnderground(enabled)
-
-    if enabled then
-        button.Text = "ON"
-        button.BackgroundColor3 = Color3.fromRGB(35, 150, 70)
+ToggleBtn.MouseButton1Click:Connect(function()
+    isUnderground = not isUnderground
+    
+    if isUnderground then
+        -- ON
+        ToggleBtn.Text = "UNDERGROUND: ON"
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50) -- Green = On
+        SetCollision(false)
+        
+        -- Disable falling state para hindi mamatay
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
     else
-        button.Text = "OFF"
-        button.BackgroundColor3 = Color3.fromRGB(150, 35, 35)
+        -- OFF
+        ToggleBtn.Text = "UNDERGROUND: OFF"
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50) -- Red = Off
+        SetCollision(true)
+        
+        -- Ibalik sa normal
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
+        
+        -- I-reset pabalik sa original Y
+        rootPart.CFrame = CFrame.new(rootPart.Position.X, originalY, rootPart.Position.Z)
     end
 end)
 
--- Respawn safety
-player.CharacterAdded:Connect(function()
-    enabled = false
-    originalCFrame = nil
+-- ==========================================
+-- MAIN LOOP (Para hindi mabalik ng server sa taas)
+-- ==========================================
+RunService.RenderStepped:Connect(function()
+    if isUnderground and character and character.Parent then
+        local currentPos = rootPart.Position
+        -- I-force ang position sa ilalim
+        rootPart.CFrame = CFrame.new(currentPos.X, targetY, currentPos.Z)
+        -- I-set velocity para hindi mag-fall nang tuloy-tuloy
+        rootPart.Velocity = Vector3.new(rootPart.Velocity.X, 0, rootPart.Velocity.Z)
+    end
+end)
 
-    task.wait(1)
-
-    if button then
-        button.Text = "OFF"
-        button.BackgroundColor3 = Color3.fromRGB(150, 35, 35)
+-- ==========================================
+-- PARA SA MGA NAG-RERESPAWN
+-- ==========================================
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    humanoid = character:WaitForChild("Humanoid")
+    rootPart = character:WaitForChild("HumanoidRootPart")
+    
+    -- I-update ang original Y base sa bagong character
+    originalY = rootPart.Position.Y
+    targetY = originalY - OFFSET
+    
+    -- Kung naka-ON pa rin, i-apply agad
+    if isUnderground then
+        SetCollision(false)
     end
 end)
