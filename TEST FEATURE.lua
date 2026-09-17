@@ -1,5 +1,5 @@
 -- ============================================================
--- 🕊️ FLY HACK — CFrame-based (Working)
+-- 🕊️ FLY HACK — MOBILE VERSION (Touch Buttons)
 -- ============================================================
 
 local Players = game:GetService("Players")
@@ -11,8 +11,15 @@ local LocalPlayer = Players.LocalPlayer
 -- ============ STATE ============
 local Fly = {
     enabled = false,
-    speed = 2,              -- 🎯 Studs per frame (2 = ~120 studs/s at 60fps)
+    speed = 2,
     conn = nil,
+    -- Mobile controls
+    moveUp = false,
+    moveDown = false,
+    moveForward = false,
+    moveBack = false,
+    moveLeft = false,
+    moveRight = false,
 }
 
 -- ============ HELPERS ============
@@ -29,85 +36,80 @@ end
 -- ============ FLY START ============
 function Fly.start()
     if Fly.enabled then return end
-    
+
     local hrp = getHRP()
     local hum = getHum()
     if not hrp or not hum then
         warn("[FLY] Walang character!")
         return
     end
-    
+
     Fly.enabled = true
-    
-    -- Stop humanoid physics (para hindi mag-collide)
     hum.PlatformStand = true
-    
-    -- Fly loop via CFrame
+
     Fly.conn = RunService.RenderStepped:Connect(function(dt)
         if not Fly.enabled then return end
-        
+
         local h = getHRP()
         local hm = getHum()
         if not h or not h.Parent or not hm or hm.Health <= 0 then
             Fly.stop()
             return
         end
-        
-        -- Camera direction
+
         local cam = workspace.CurrentCamera
         local look = cam.CFrame.LookVector
         local right = cam.CFrame.RightVector
         local up = Vector3.new(0, 1, 0)
-        
-        -- Build direction
+
         local move = Vector3.zero
-        
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-            move = move + look
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-            move = move - look
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-            move = move - right
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-            move = move + right
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-            move = move + up
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-            move = move - up
-        end
-        
-        -- Normalize
+
+        -- Mobile buttons
+        if Fly.moveForward then move = move + look end
+        if Fly.moveBack then move = move - look end
+        if Fly.moveLeft then move = move - right end
+        if Fly.moveRight then move = move + right end
+        if Fly.moveUp then move = move + up end
+        if Fly.moveDown then move = move - up end
+
+        -- Keyboard (kung may keyboard pa rin)
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + look end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - look end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - right end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + right end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + up end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then move = move - up end
+
         if move.Magnitude > 0 then
             move = move.Unit
         end
-        
-        -- 🎯 CFrame write — direct position update
+
         local newPos = h.Position + (move * Fly.speed)
         h.CFrame = CFrame.new(newPos, newPos + look)
-        
-        -- Kill gravity/velocity (para steady)
         h.AssemblyLinearVelocity = Vector3.zero
         h.AssemblyAngularVelocity = Vector3.zero
     end)
-    
-    print("[FLY] ✅ ON — Speed: " .. Fly.speed .. " studs/frame")
+
+    print("[FLY] ✅ ON — Mobile controls active")
 end
 
--- ============ FLY STOP ============
 function Fly.stop()
     if not Fly.enabled then return end
     Fly.enabled = false
-    
+
     if Fly.conn then
         Fly.conn:Disconnect()
         Fly.conn = nil
     end
-    
+
+    -- Reset mobile buttons
+    Fly.moveUp = false
+    Fly.moveDown = false
+    Fly.moveForward = false
+    Fly.moveBack = false
+    Fly.moveLeft = false
+    Fly.moveRight = false
+
     local hum = getHum()
     if hum then
         pcall(function()
@@ -115,11 +117,10 @@ function Fly.stop()
             hum:ChangeState(Enum.HumanoidStateType.GettingUp)
         end)
     end
-    
+
     print("[FLY] ❌ OFF")
 end
 
--- Respawn handler
 LocalPlayer.CharacterAdded:Connect(function()
     if Fly.enabled then
         Fly.stop()
@@ -140,166 +141,236 @@ local COLORS = {
     YELLOW = Color3.fromRGB(255, 200, 0),
     CYAN = Color3.fromRGB(80, 200, 255),
     PURPLE = Color3.fromRGB(180, 100, 255),
+    DARK_BTN = Color3.fromRGB(50, 50, 65),
+    BTN_ACTIVE = Color3.fromRGB(0, 180, 90),
 }
 
 local function createUI()
     if CoreGui:FindFirstChild("FlyUI") then
         CoreGui.FlyUI:Destroy()
     end
-    
+
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "FlyUI"
     ScreenGui.ResetOnSpawn = false
     ScreenGui.Parent = CoreGui
-    
+
+    -- ============ MAIN PANEL ============
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 240, 0, 160)
-    Main.Position = UDim2.new(0.5, -120, 0.5, -80)
+    Main.Size = UDim2.new(0, 200, 0, 90)
+    Main.Position = UDim2.new(0, 10, 0, 50)
     Main.BackgroundColor3 = COLORS.BG
     Main.BorderSizePixel = 0
     Main.Active = true
     Main.Draggable = true
     Main.Parent = ScreenGui
-    
-    Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
+
+    Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 8)
     local stroke = Instance.new("UIStroke", Main)
     stroke.Color = COLORS.PURPLE
-    
-    local TitleBar = Instance.new("Frame", Main)
-    TitleBar.Size = UDim2.new(1, 0, 0, 32)
-    TitleBar.BackgroundColor3 = COLORS.TITLE_BG
-    TitleBar.BorderSizePixel = 0
-    Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
-    
-    local TitleCover = Instance.new("Frame", TitleBar)
-    TitleCover.Size = UDim2.new(1, 0, 0, 10)
-    TitleCover.Position = UDim2.new(0, 0, 1, -10)
-    TitleCover.BackgroundColor3 = COLORS.TITLE_BG
-    TitleCover.BorderSizePixel = 0
-    
-    local Title = Instance.new("TextLabel", TitleBar)
-    Title.Size = UDim2.new(1, -40, 1, 0)
-    Title.Position = UDim2.new(0, 10, 0, 0)
+
+    local Title = Instance.new("TextLabel", Main)
+    Title.Size = UDim2.new(1, -30, 0, 24)
+    Title.Position = UDim2.new(0, 8, 0, 2)
     Title.BackgroundTransparency = 1
     Title.Text = "🕊️ Fly Hack"
     Title.TextColor3 = COLORS.PURPLE
-    Title.TextSize = 13
+    Title.TextSize = 12
     Title.Font = Enum.Font.GothamBold
     Title.TextXAlignment = Enum.TextXAlignment.Left
-    
-    local CloseBtn = Instance.new("TextButton", TitleBar)
-    CloseBtn.Size = UDim2.new(0, 22, 0, 22)
-    CloseBtn.Position = UDim2.new(1, -27, 0, 5)
-    CloseBtn.BackgroundColor3 = COLORS.RED
-    CloseBtn.Text = "✕"
-    CloseBtn.TextColor3 = COLORS.TEXT
-    CloseBtn.TextSize = 12
-    CloseBtn.Font = Enum.Font.GothamBold
-    Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 5)
-    
-    local lbl = Instance.new("TextLabel", Main)
-    lbl.Size = UDim2.new(1, -100, 0, 25)
-    lbl.Position = UDim2.new(0, 15, 0, 45)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = "🕊️ Fly Mode"
-    lbl.TextColor3 = COLORS.TEXT
-    lbl.TextSize = 14
-    lbl.Font = Enum.Font.GothamBold
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    
-    local stateLbl = Instance.new("TextLabel", Main)
-    stateLbl.Size = UDim2.new(0, 40, 0, 25)
-    stateLbl.Position = UDim2.new(1, -100, 0, 45)
-    stateLbl.BackgroundTransparency = 1
-    stateLbl.Text = "OFF"
-    stateLbl.TextColor3 = COLORS.RED
-    stateLbl.TextSize = 12
-    stateLbl.Font = Enum.Font.GothamBold
-    stateLbl.TextXAlignment = Enum.TextXAlignment.Right
-    
-    local track = Instance.new("Frame", Main)
-    track.Size = UDim2.new(0, 46, 0, 24)
-    track.Position = UDim2.new(1, -58, 0, 45)
-    track.BackgroundColor3 = COLORS.TRACK_OFF
-    track.BorderSizePixel = 0
-    Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
-    
-    local knob = Instance.new("Frame", track)
-    knob.Size = UDim2.new(0, 18, 0, 18)
-    knob.Position = UDim2.new(0, 3, 0.5, -9)
-    knob.BackgroundColor3 = COLORS.KNOB
-    knob.BorderSizePixel = 0
-    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
-    
-    local btn = Instance.new("TextButton", Main)
-    btn.Size = UDim2.new(0, 110, 0, 30)
-    btn.Position = UDim2.new(1, -115, 0, 40)
-    btn.BackgroundTransparency = 1
-    btn.Text = ""
-    
-    local Info1 = Instance.new("TextLabel", Main)
-    Info1.Size = UDim2.new(1, -24, 0, 16)
-    Info1.Position = UDim2.new(0, 12, 0, 78)
-    Info1.BackgroundTransparency = 1
-    Info1.Text = "⚡ Speed: 2 studs/frame"
-    Info1.TextColor3 = COLORS.CYAN
-    Info1.TextSize = 10
-    Info1.Font = Enum.Font.Gotham
-    Info1.TextXAlignment = Enum.TextXAlignment.Left
-    
-    local Info2 = Instance.new("TextLabel", Main)
-    Info2.Size = UDim2.new(1, -24, 0, 16)
-    Info2.Position = UDim2.new(0, 12, 0, 96)
-    Info2.BackgroundTransparency = 1
-    Info2.Text = "🎮 WASD + Space/LCtrl"
-    Info2.TextColor3 = COLORS.YELLOW
-    Info2.TextSize = 10
-    Info2.Font = Enum.Font.Gotham
-    Info2.TextXAlignment = Enum.TextXAlignment.Left
-    
-    local Status = Instance.new("TextLabel", Main)
-    Status.Size = UDim2.new(1, -24, 0, 16)
-    Status.Position = UDim2.new(0, 12, 0, 120)
-    Status.BackgroundTransparency = 1
-    Status.Text = "Status: Ready"
-    Status.TextColor3 = COLORS.GREEN
-    Status.TextSize = 10
-    Status.Font = Enum.Font.GothamBold
-    Status.TextXAlignment = Enum.TextXAlignment.Left
-    
+
+    -- Toggle button
+    local toggleBtn = Instance.new("TextButton", Main)
+    toggleBtn.Size = UDim2.new(1, -16, 0, 30)
+    toggleBtn.Position = UDim2.new(0, 8, 0, 30)
+    toggleBtn.BackgroundColor3 = COLORS.DARK_BTN
+    toggleBtn.BorderSizePixel = 0
+    toggleBtn.Text = "🕊️ Fly: OFF"
+    toggleBtn.TextColor3 = COLORS.TEXT
+    toggleBtn.TextSize = 12
+    toggleBtn.Font = Enum.Font.GothamBold
+    toggleBtn.AutoButtonColor = false
+    Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 5)
+
+    local statusLbl = Instance.new("TextLabel", Main)
+    statusLbl.Size = UDim2.new(1, -16, 0, 16)
+    statusLbl.Position = UDim2.new(0, 8, 0, 64)
+    statusLbl.BackgroundTransparency = 1
+    statusLbl.Text = "🎮 Mobile controls"
+    statusLbl.TextColor3 = COLORS.CYAN
+    statusLbl.TextSize = 9
+    statusLbl.Font = Enum.Font.Gotham
+    statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+    -- ============ MOBILE BUTTONS (Right side) ============
+    -- Up button
+    local upBtn = Instance.new("TextButton", ScreenGui)
+    upBtn.Size = UDim2.new(0, 60, 0, 60)
+    upBtn.Position = UDim2.new(1, -160, 1, -220)
+    upBtn.BackgroundColor3 = COLORS.DARK_BTN
+    upBtn.BackgroundTransparency = 0.3
+    upBtn.BorderSizePixel = 0
+    upBtn.Text = "⬆️"
+    upBtn.TextSize = 24
+    upBtn.TextColor3 = COLORS.TEXT
+    upBtn.AutoButtonColor = false
+    upBtn.Visible = false
+    Instance.new("UICorner", upBtn).CornerRadius = UDim.new(0, 10)
+
+    -- Down button
+    local downBtn = Instance.new("TextButton", ScreenGui)
+    downBtn.Size = UDim2.new(0, 60, 0, 60)
+    downBtn.Position = UDim2.new(1, -160, 1, -140)
+    downBtn.BackgroundColor3 = COLORS.DARK_BTN
+    downBtn.BackgroundTransparency = 0.3
+    downBtn.BorderSizePixel = 0
+    downBtn.Text = "⬇️"
+    downBtn.TextSize = 24
+    downBtn.TextColor3 = COLORS.TEXT
+    downBtn.AutoButtonColor = false
+    downBtn.Visible = false
+    Instance.new("UICorner", downBtn).CornerRadius = UDim.new(0, 10)
+
+    -- Forward (up arrow on dpad)
+    local fwdBtn = Instance.new("TextButton", ScreenGui)
+    fwdBtn.Size = UDim2.new(0, 50, 0, 50)
+    fwdBtn.Position = UDim2.new(0, 30, 1, -180)
+    fwdBtn.BackgroundColor3 = COLORS.DARK_BTN
+    fwdBtn.BackgroundTransparency = 0.3
+    fwdBtn.BorderSizePixel = 0
+    fwdBtn.Text = "▲"
+    fwdBtn.TextSize = 20
+    fwdBtn.TextColor3 = COLORS.TEXT
+    fwdBtn.AutoButtonColor = false
+    fwdBtn.Visible = false
+    Instance.new("UICorner", fwdBtn).CornerRadius = UDim.new(0, 8)
+
+    -- Back (down arrow)
+    local backBtn = Instance.new("TextButton", ScreenGui)
+    backBtn.Size = UDim2.new(0, 50, 0, 50)
+    backBtn.Position = UDim2.new(0, 30, 1, -70)
+    backBtn.BackgroundColor3 = COLORS.DARK_BTN
+    backBtn.BackgroundTransparency = 0.3
+    backBtn.BorderSizePixel = 0
+    backBtn.Text = "▼"
+    backBtn.TextSize = 20
+    backBtn.TextColor3 = COLORS.TEXT
+    backBtn.AutoButtonColor = false
+    backBtn.Visible = false
+    Instance.new("UICorner", backBtn).CornerRadius = UDim.new(0, 8)
+
+    -- Left
+    local leftBtn = Instance.new("TextButton", ScreenGui)
+    leftBtn.Size = UDim2.new(0, 50, 0, 50)
+    leftBtn.Position = UDim2.new(0, 88, 1, -125)
+    leftBtn.BackgroundColor3 = COLORS.DARK_BTN
+    leftBtn.BackgroundTransparency = 0.3
+    leftBtn.BorderSizePixel = 0
+    leftBtn.Text = "◀"
+    leftBtn.TextSize = 20
+    leftBtn.TextColor3 = COLORS.TEXT
+    leftBtn.AutoButtonColor = false
+    leftBtn.Visible = false
+    Instance.new("UICorner", leftBtn).CornerRadius = UDim.new(0, 8)
+
+    -- Right
+    local rightBtn = Instance.new("TextButton", ScreenGui)
+    rightBtn.Size = UDim2.new(0, 50, 0, 50)
+    rightBtn.Position = UDim2.new(0, 146, 1, -125)
+    rightBtn.BackgroundColor3 = COLORS.DARK_BTN
+    rightBtn.BackgroundTransparency = 0.3
+    rightBtn.BorderSizePixel = 0
+    rightBtn.Text = "▶"
+    rightBtn.TextSize = 20
+    rightBtn.TextColor3 = COLORS.TEXT
+    rightBtn.AutoButtonColor = false
+    rightBtn.Visible = false
+    Instance.new("UICorner", rightBtn).CornerRadius = UDim.new(0, 8)
+
+    -- All buttons
+    local allButtons = {upBtn, downBtn, fwdBtn, backBtn, leftBtn, rightBtn}
+
+    local function setButtonsVisible(visible)
+        for _, btn in ipairs(allButtons) do
+            btn.Visible = visible
+        end
+    end
+
+    -- ============ TOGGLE WIRING ============
+    toggleBtn.MouseButton1Click:Connect(function()
+        if not Fly.enabled then
+            Fly.start()
+            toggleBtn.Text = "🕊️ Fly: ON"
+            toggleBtn.BackgroundColor3 = COLORS.BTN_ACTIVE
+            statusLbl.Text = "🎮 Use buttons below"
+            setButtonsVisible(true)
+        else
+            Fly.stop()
+            toggleBtn.Text = "🕊️ Fly: OFF"
+            toggleBtn.BackgroundColor3 = COLORS.DARK_BTN
+            statusLbl.Text = "🎮 Mobile controls"
+            setButtonsVisible(false)
+        end
+    end)
+
+    -- ============ BUTTON HOLD LOGIC ============
+    local function setupHold(btn, stateKey)
+        btn.MouseButton1Down:Connect(function()
+            Fly[stateKey] = true
+            btn.BackgroundColor3 = COLORS.BTN_ACTIVE
+            btn.BackgroundTransparency = 0
+        end)
+        btn.MouseButton1Up:Connect(function()
+            Fly[stateKey] = false
+            btn.BackgroundColor3 = COLORS.DARK_BTN
+            btn.BackgroundTransparency = 0.3
+        end)
+        -- Touch support (para sigurado sa phone)
+        btn.TouchLongPress:Connect(function()
+            Fly[stateKey] = true
+            btn.BackgroundColor3 = COLORS.BTN_ACTIVE
+            btn.BackgroundTransparency = 0
+        end)
+        btn.TouchEnded:Connect(function()
+            Fly[stateKey] = false
+            btn.BackgroundColor3 = COLORS.DARK_BTN
+            btn.BackgroundTransparency = 0.3
+        end)
+        -- Fallback: InputBegan/InputEnded
+        btn.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch
+               or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                Fly[stateKey] = true
+                btn.BackgroundColor3 = COLORS.BTN_ACTIVE
+                btn.BackgroundTransparency = 0
+            end
+        end)
+        btn.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch
+               or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                Fly[stateKey] = false
+                btn.BackgroundColor3 = COLORS.DARK_BTN
+                btn.BackgroundTransparency = 0.3
+            end
+        end)
+    end
+
+    setupHold(fwdBtn, "moveForward")
+    setupHold(backBtn, "moveBack")
+    setupHold(leftBtn, "moveLeft")
+    setupHold(rightBtn, "moveRight")
+    setupHold(upBtn, "moveUp")
+    setupHold(downBtn, "moveDown")
+
     return {
         ScreenGui = ScreenGui,
-        track = track, knob = knob, stateLbl = stateLbl,
-        btn = btn, Status = Status, CloseBtn = CloseBtn,
+        Main = Main,
+        toggleBtn = toggleBtn,
+        statusLbl = statusLbl,
+        buttons = allButtons,
     }
 end
 
 local ui = createUI()
 
-local function setToggle(on)
-    ui.track.BackgroundColor3 = on and COLORS.GREEN or COLORS.TRACK_OFF
-    ui.knob.Position = on and UDim2.new(0, 25, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)
-    ui.stateLbl.Text = on and "ON" or "OFF"
-    ui.stateLbl.TextColor3 = on and COLORS.GREEN or COLORS.RED
-end
-
-ui.btn.MouseButton1Click:Connect(function()
-    if not Fly.enabled then
-        setToggle(true)
-        ui.Status.Text = "🕊️ Flying..."
-        ui.Status.TextColor3 = COLORS.GREEN
-        Fly.start()
-    else
-        setToggle(false)
-        ui.Status.Text = "Status: Stopped"
-        ui.Status.TextColor3 = COLORS.YELLOW
-        Fly.stop()
-    end
-end)
-
-ui.CloseBtn.MouseButton1Click:Connect(function()
-    Fly.stop()
-    ui.ScreenGui:Destroy()
-end)
-
-print("[FLY] ✅ CFrame-based Fly UI ready")
+print("[FLY] ✅ Mobile Fly UI ready — click toggle then use buttons")
