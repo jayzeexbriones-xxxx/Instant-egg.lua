@@ -803,7 +803,7 @@ ui.pickupToggle.btn.MouseButton1Click:Connect(function()
             ui.Status.Text = "⚡ Instant Pickup ON"
             ui.Status.TextColor3 = COLORS.GREEN
         else
-            ui.Status.Text = "ui.Status.Text = "❌ Pickup failed"
+            ui.Status.Text = "❌ Pickup failed"
             ui.Status.TextColor3 = COLORS.RED
             utility.pickupEnabled = false
             setToggle(ui.pickupToggle, false)
