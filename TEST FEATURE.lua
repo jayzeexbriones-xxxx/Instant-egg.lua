@@ -1,10 +1,9 @@
 -- ==========================================
--- UNDERGROUND SCRIPT WITH UI TOGGLE
+-- UNDERGROUND SCRIPT V2 (Stable + UI Toggle)
 -- ==========================================
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -12,10 +11,10 @@ local humanoid = character:WaitForChild("Humanoid")
 local rootPart = character:WaitForChild("HumanoidRootPart")
 
 -- SETTINGS
-local OFFSET = 5 -- Ilang studs pababa? (5 studs default)
-local isUnderground = false -- Status ng script
+local OFFSET = 5 -- Ilang studs pababa? (Palitan mo kung gusto mo mas malalim)
+local isUnderground = false
 
--- Kunin ang Original Y Position
+-- Kuhanin ang Original Y Position
 local originalY = rootPart.Position.Y 
 local targetY = originalY - OFFSET
 
@@ -28,8 +27,8 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = player:WaitForChild("PlayerGui")
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 150, 0, 50)
-MainFrame.Position = UDim2.new(0.5, -75, 0.2, 0)
+MainFrame.Size = UDim2.new(0, 160, 0, 55)
+MainFrame.Position = UDim2.new(0.5, -80, 0.2, 0)
 MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -47,7 +46,7 @@ ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50) -- Red = Off
 ToggleBtn.Text = "UNDERGROUND: OFF"
 ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 ToggleBtn.Font = Enum.Font.GothamBold
-ToggleBtn.TextSize = 12
+ToggleBtn.TextSize = 13
 ToggleBtn.Parent = MainFrame
 
 local BtnCorner = Instance.new("UICorner")
@@ -55,9 +54,18 @@ BtnCorner.CornerRadius = UDim.new(0, 6)
 BtnCorner.Parent = ToggleBtn
 
 -- ==========================================
--- LOGIC NG SCRIPT
+-- BODY POSITION SETUP (Anti-Bug 2 Studs)
 -- ==========================================
+local bodyPos = Instance.new("BodyPosition")
+bodyPos.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+bodyPos.P = 10000 -- Lakas ng paghatak pababa
+bodyPos.D = 500   -- Damping (para hindi mag-vibrate)
+bodyPos.Parent = rootPart
+bodyPos.Enabled = false -- Naka-off muna
 
+-- ==========================================
+-- FUNCTIONS
+-- ==========================================
 local function SetCollision(state)
     for _, part in pairs(character:GetDescendants()) do
         if part:IsA("BasePart") then
@@ -66,6 +74,9 @@ local function SetCollision(state)
     end
 end
 
+-- ==========================================
+-- TOGGLE LOGIC
+-- ==========================================
 ToggleBtn.MouseButton1Click:Connect(function()
     isUnderground = not isUnderground
     
@@ -78,6 +89,10 @@ ToggleBtn.MouseButton1Click:Connect(function()
         -- Disable falling state para hindi mamatay
         humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
         humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+        
+        -- I-activate yung BodyPosition
+        bodyPos.Position = Vector3.new(rootPart.Position.X, targetY, rootPart.Position.Z)
+        bodyPos.Enabled = true
     else
         -- OFF
         ToggleBtn.Text = "UNDERGROUND: OFF"
@@ -88,26 +103,24 @@ ToggleBtn.MouseButton1Click:Connect(function()
         humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
         humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
         
-        -- I-reset pabalik sa original Y
+        -- I-deactivate yung BodyPosition at ibalik sa original Y
+        bodyPos.Enabled = false
         rootPart.CFrame = CFrame.new(rootPart.Position.X, originalY, rootPart.Position.Z)
     end
 end)
 
 -- ==========================================
--- MAIN LOOP (Para hindi mabalik ng server sa taas)
+-- MAIN LOOP (Para manatili sa ilalim)
 -- ==========================================
 RunService.RenderStepped:Connect(function()
-    if isUnderground and character and character.Parent then
-        local currentPos = rootPart.Position
-        -- I-force ang position sa ilalim
-        rootPart.CFrame = CFrame.new(currentPos.X, targetY, currentPos.Z)
-        -- I-set velocity para hindi mag-fall nang tuloy-tuloy
-        rootPart.Velocity = Vector3.new(rootPart.Velocity.X, 0, rootPart.Velocity.Z)
+    if isUnderground and bodyPos.Enabled then
+        -- I-lock yung Y sa targetY, pero hayaan yung X at Z na sumunod sa movement mo
+        bodyPos.Position = Vector3.new(rootPart.Position.X, targetY, rootPart.Position.Z)
     end
 end)
 
 -- ==========================================
--- PARA SA MGA NAG-RERESPAWN
+-- RESPAWN HANDLER
 -- ==========================================
 player.CharacterAdded:Connect(function(newChar)
     character = newChar
@@ -118,8 +131,14 @@ player.CharacterAdded:Connect(function(newChar)
     originalY = rootPart.Position.Y
     targetY = originalY - OFFSET
     
+    -- I-reparent yung BodyPosition sa bagong RootPart
+    bodyPos.Parent = rootPart
+    bodyPos.Enabled = false
+    
     -- Kung naka-ON pa rin, i-apply agad
     if isUnderground then
         SetCollision(false)
+        bodyPos.Position = Vector3.new(rootPart.Position.X, targetY, rootPart.Position.Z)
+        bodyPos.Enabled = true
     end
 end)
