@@ -17,7 +17,7 @@ local State = {
     checkDelay   = 0.1,
     grabCooldown = 2,
     postGrabWait = 0.3,
-    espEnabled   = true, -- ESP Line toggle
+    espEnabled   = true,
 }
 
 local AREA_NAMES = {
@@ -91,7 +91,7 @@ local function getEggPos(rec)
     return nil
 end
 
--- ============ 💰 CALCULATE EGG VALUE ============
+-- ============ CALCULATE EGG VALUE ============
 local function calcEggValue(rec)
     if not rec then return 0 end
 
@@ -109,7 +109,6 @@ local function calcEggValue(rec)
         end
     end
 
-    local rarity = getRarityNumber(rec)
     local scale = getAssetScale(rec)
     local mutMult = 1
 
@@ -211,17 +210,16 @@ local function formatNumber(n)
 end
 
 -- ============================================================
--- 🎯 ESP LINE SYSTEM (BAGO)
+-- ESP LINE SYSTEM
 -- ============================================================
 local ESP = {
-    line = nil,         -- Yung linya
-    targetPart = nil,   -- Yung pinaka-best egg part
-    targetPos = nil,    -- Position ng target
+    line = nil,
+    targetPart = nil,
+    targetPos = nil,
 }
 
 local function createESPLine()
     if ESP.line then return end
-    
     local line = Instance.new("Part")
     line.Name = "ESP_BestEggLine"
     line.Anchored = true
@@ -229,11 +227,10 @@ local function createESPLine()
     line.CanQuery = false
     line.CanTouch = false
     line.Transparency = 0.3
-    line.Color = Color3.fromRGB(255, 215, 0) -- Gold
+    line.Color = Color3.fromRGB(255, 215, 0)
     line.Material = Enum.Material.Neon
     line.Size = Vector3.new(0.15, 0.15, 1)
     line.Parent = Workspace
-    
     ESP.line = line
 end
 
@@ -242,53 +239,48 @@ local function updateESPLine()
         if ESP.line then ESP.line.Transparency = 1 end
         return
     end
-    
+
     if not ESP.line then createESPLine() end
     if not ESP.line then return end
-    
+
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then 
+    if not hrp then
         ESP.line.Transparency = 1
-        return 
+        return
     end
-    
+
     if not ESP.targetPos then
         ESP.line.Transparency = 1
         return
     end
-    
-    -- I-set yung line mula character papunta sa target
-    local startPos = hrp.Position
-    local endPos = ESP.targetPos
-    
-    -- Check kung valid pa yung target
+
     if ESP.targetPart and not ESP.targetPart.Parent then
         ESP.targetPart = nil
         ESP.targetPos = nil
         ESP.line.Transparency = 1
         return
     end
-    
+
+    local startPos = hrp.Position
+    local endPos = ESP.targetPos
     local midPos = (startPos + endPos) / 2
     local distance = (endPos - startPos).Magnitude
-    
+
     ESP.line.CFrame = CFrame.new(midPos, endPos)
     ESP.line.Size = Vector3.new(0.15, 0.15, distance)
     ESP.line.Transparency = 0.3
 end
 
 local function setESPTarget(rec)
-    if not rec then 
+    if not rec then
         ESP.targetPart = nil
         ESP.targetPos = nil
         return
     end
-    
     local eggPos = getEggPos(rec)
     if eggPos then
         ESP.targetPos = eggPos
-        -- Hanapin yung part ng egg
         local model = Workspace:FindFirstChild(rec.Uid, true)
         if model then
             ESP.targetPart = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
@@ -325,8 +317,7 @@ local function mainLoop()
         end
 
         local eggs = findAllHighValueEggs()
-        
-        -- 🎯 I-update yung ESP target sa pinaka-best egg
+
         if #eggs > 0 then
             setESPTarget(eggs[1].rec)
         else
@@ -491,7 +482,7 @@ local function createUI()
     btn.BackgroundTransparency = 1
     btn.Text = ""
 
-    -- ESP Toggle (Bagong button)
+    -- ESP Toggle
     local espLbl = Instance.new("TextLabel", Main)
     espLbl.Size = UDim2.new(1, -120, 0, 25)
     espLbl.Position = UDim2.new(0, 15, 0, 80)
@@ -605,7 +596,6 @@ end
 ui.espBtn.MouseButton1Click:Connect(function()
     State.espEnabled = not State.espEnabled
     setToggle(ui.espTrack, ui.espKnob, ui.espState, State.espEnabled)
-    
     if not State.espEnabled then
         if ESP.line then ESP.line.Transparency = 1 end
     end
@@ -624,3 +614,53 @@ task.spawn(function()
                 ui.QueueLbl.Text = ("📋 Queue: %d eggs (descending)"):format(#eggs)
             else
                 ui.InfoLbl.Text = "🎯 Next: -- (waiting)"
+                ui.QueueLbl.Text = "📋 Queue: 0 eggs"
+            end
+        end
+    end
+end)
+
+-- Auto Grab Toggle click
+ui.btn.MouseButton1Click:Connect(function()
+    if not State.running then
+        if not loadModules() then
+            ui.Status.Text = "❌ EggState not found"
+            ui.Status.TextColor3 = COLORS.RED
+            return
+        end
+        setToggle(ui.track, ui.knob, ui.state, true)
+        ui.Status.Text = "Min: 50.00M | Highest First"
+        ui.Status.TextColor3 = COLORS.GREEN
+        task.spawn(mainLoop)
+    else
+        State.running = false
+        setToggle(ui.track, ui.knob, ui.state, false)
+        ui.Status.Text = "Stopped"
+        ui.Status.TextColor3 = COLORS.YELLOW
+    end
+end)
+
+ui.CloseBtn.MouseButton1Click:Connect(function()
+    State.running = false
+    clearESP()
+    ui.ScreenGui:Destroy()
+end)
+
+-- ESP Line updater
+RunService.RenderStepped:Connect(function()
+    if State.espEnabled and State.running then
+        updateESPLine()
+    end
+end)
+
+-- Auto-init
+task.spawn(function()
+    task.wait(0.5)
+    if loadModules() then
+        ui.Status.Text = "✅ Ready | Min: 50.00M"
+        ui.Status.TextColor3 = COLORS.GREEN
+    else
+        ui.Status.Text = "⚠️ Waiting for game..."
+        ui.Status.TextColor3 = COLORS.YELLOW
+    end
+end)
